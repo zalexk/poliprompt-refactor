@@ -6,5 +6,9 @@
     "voyageai": {
         "model": "voyage-2", 
         "batch_size": 32
+    },
+    "qwen": {
+        "model": "qwen3-vl-embedding",
+        "batch_size": 1
     }
 }

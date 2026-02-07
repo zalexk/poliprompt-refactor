@@ -1,0 +1,4 @@
+Task: Social Media Content Moderation.
+The goal is to classify memes (Text + Image) into two categories:
+- <1>: Hateful/Harmful content (promotes hate, violence, or discrimination).
+- <0>: Not Hateful/Harmful content (neutral or harmless).

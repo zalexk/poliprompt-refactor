@@ -9,7 +9,8 @@ logging.basicConfig(
 )
 
 from .text_classifier import TextClassifier
+from .multimodal_classifier import MultiModalClassifier
 
 __version__ = "0.2.1"
 
-__all__ = ["TextClassifier"]
+__all__ = ["TextClassifier", "MultiModalClassifier"]

@@ -2,6 +2,7 @@ from scipy.spatial.distance import cdist
 from typing import List, Dict
 import pandas as pd
 import numpy as np
+import faiss
 
 def maximal_marginal_relevance(
     query_embedding, pool_embeddings, selected_indices, k, lambda_param=1.0, metric="euclidean"
@@ -21,7 +22,7 @@ def maximal_marginal_relevance(
     """
 
     # Calculate the distances between the query and the pool embeddings
-    relevance_scores = cdist([query_embedding], pool_embeddings, metric=metric).flatten()
+    relevance_scores = cdist(query_embedding, pool_embeddings, metric=metric).flatten()
 
     # List to store the indices of selected items
     if not selected_indices:
@@ -66,7 +67,7 @@ def get_k_nearest_distinct_classes(query_embedding, pool_embeddings, pool_labels
     """
 
     # Calculate the distances between the query and the pool embeddings
-    distances = cdist([query_embedding], pool_embeddings, metric=metric).flatten()
+    distances = cdist(query_embedding, pool_embeddings, metric=metric).flatten()
 
     # Get the sorted indices based on distance (smallest to largest)
     sorted_indices = np.argsort(distances)
@@ -97,7 +98,7 @@ def select_kshots(
     kshots: int,
     idx: int,
     indices: List[int],
-    embeddings: np.ndarray,
+    index: faiss.Index,
     lambda_param: float = 1.0,
     options=None,
 ) -> List[Dict[str, str]]:
@@ -118,10 +119,19 @@ def select_kshots(
         - List[Dict[str, str]]: A list of dictionaries with 'Text' and 'Answer' for the selected k-shots.
     """
     # Extract the embedding for the query example
-    query_embedding = embeddings[idx]
+    # index.reconstruct(idx)让faiss根据编号，去它内部压缩、优化过的数据库里，把原始向量重新“组装”拿出来
+    # .reshape(1,-1) 
+    query_embedding = np.array(index.reconstruct(int(idx))).reshape(1,-1).astype('float32') # type:ignore
 
     # Extract the embeddings for the pool of examples
-    pool_embeddings = embeddings[indices]
+    # faiss不擅长随机切片，根据indices去把n个向量取出来，拼成一个numpy矩阵
+    pool_embeddings = np.array([index.reconstruct(int(i)) for i in indices]).astype('float32') # type:ignore
+    if pool_embeddings.ndim == 1:
+        pool_embeddings = pool_embeddings.reshape(1, -1)
+    
+    print(f"DEBUG: query_embedding 形状: {query_embedding.shape}")
+    print(f"DEBUG: pool_embeddings 形状: {pool_embeddings.shape}")
+
     pool_labels = ds.iloc[indices][answer_col].tolist()
 
     # Initialize the list for selected indices
