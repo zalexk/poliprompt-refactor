@@ -8,9 +8,10 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]  # Send output to the terminal
 )
 
-from .text_classifier import TextClassifier
+# from .text_classifier import TextClassifier
 from .multimodal_classifier import MultiModalClassifier
 
 __version__ = "0.2.1"
 
-__all__ = ["TextClassifier", "MultiModalClassifier"]
+# __all__ = ["TextClassifier", "MultiModalClassifier"]
+__all__ = ["MultiModalClassifier"]

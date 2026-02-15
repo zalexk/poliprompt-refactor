@@ -4,7 +4,7 @@ import time
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import List,Optional #类型提示
+from typing import List,Optional,TypedDict, Dict, Any #类型提示
 
 import json
 import yaml  
@@ -17,12 +17,37 @@ import faiss
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate, ChatPromptTemplate, MessagesPlaceholder, HumanMessagePromptTemplate
 from langchain_core.messages import SystemMessage
-from langchain.chains.llm import LLMChain
-from langchain.chains.combine_documents.stuff import StuffDocumentsChain
+# from langchain_community.chains.llm import LLMChain
+# from langchain_community.chains.combine_documents.stuff import StuffDocumentsChain
 # 把文本一股脑塞进一个prompt里
-from langchain.docstore.document import Document
-# 包括文本和metadata
-from langchain.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+# from langchain_core.documents import Document
+# # 包括文本和metadata
+# from langchain_community.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+# --- 万能导入块：自动适配 LangChain 所有版本 ---
+
+try:
+    # 尝试 0.3+ 的最新路径
+    from langchain.chains.llm import LLMChain
+    from langchain.chains.combine_documents.stuff import StuffDocumentsChain
+    from langchain.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+except ImportError:
+    try:
+        # 尝试 community 路径
+        from langchain_community.chains.llm import LLMChain
+        from langchain_community.chains.combine_documents.stuff import StuffDocumentsChain
+        from langchain_community.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+    except ImportError:
+        # 如果还是不行，说明包没装好，我们手动安装最稳的版本
+        print("警告：无法找到 langchain.chains，正在尝试应急修复...")
+        # 这一步通常不会在运行中执行，但给 Pylance 一个提示
+        LLMChain = Any
+        StuffDocumentsChain = Any
+
+# 统一 Document 导入
+try:
+    from langchain_core.documents import Document
+except ImportError:
+    from langchain.docstore.document import Document
 
 from .utils import *
 from .llm_contribs import create_llm, call_llm_wrapper, get_llm_embeddings, _prepare_multimodal_message
@@ -30,6 +55,9 @@ from .reducers import create_reducer
 from .selectors import create_selector
 from .retrieves import select_kshots
 
+from pydantic import BaseModel, Field
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 
 # Set the logging level to WARNING to ignore INFO and DEBUG logs of LLM requests
 httpx_logger = logging.getLogger("httpx")
@@ -39,6 +67,22 @@ httpx_logger.setLevel(logging.WARNING)
 # Setup logger
 logger = logging.getLogger(__name__)
 # 给当前文件创建一个叫logger的记录员
+
+class ClassificationResult(BaseModel):
+    label: str = Field(description="Selected label from options")
+    confidence: float = Field(description="Confidence score 0.0-1.0")
+    reason: str = Field(description="Reasoning for this choice")
+
+class AgentState(TypedDict):
+    pending_indices: List[int]
+    current_index: Optional[int]
+    results:Dict[int,str]
+    messages:Optional[List[Any]]
+    image_path:Optional[str]
+    multimodal_data: List[dict] 
+    temp_prediction: Optional[dict] 
+    messages: Optional[List[Any]]
+
 
 class MultiModalClassifier:
     def __init__(
@@ -87,7 +131,7 @@ class MultiModalClassifier:
         self.images_out_dir = self.outfiles_dir / "images"
         # 只给了一个work_station,自动规划“输入文件夹”，“配置文件文件夹”，“日志文件夹”等
         # /就是Path对象的作用，可以拼接路径
-
+        
         # Load the passwordf of LLMs from environment file
         load_dotenv(Path(os.path.expanduser(env_path)), override=True)
 
@@ -298,6 +342,172 @@ class MultiModalClassifier:
         logger.warning(output_summary["output_text"])
 
         return output_summary["output_text"]
+    
+    def _ai_predict_node(self, state: AgentState):
+            # 1. 明确我们要处理的是哪一行
+            i = state["pending_indices"][0]
+            
+            # 2. 逻辑分流：如果是已经被人类标过的精英样本 (Exemplar)
+            if i in self.indices:
+                label = self.df.loc[i, self.answer_col]
+                # 直接返回结果，不调模型
+                return {
+                    "current_index": i,
+                    "temp_prediction": {
+                        "label": str(label), 
+                        "confidence": 1.0, 
+                        "reason": "Exemplar from pool"
+                    }
+                }
+            
+            # 3. 如果是普通样本，准备调模型
+            item = state["multimodal_data"][i]
+            
+            # --- 这里的 select_kshots 和拼装逻辑保持不变，但只针对 i ---
+            examples = select_kshots(
+                self.df, self.feature_col, self.answer_col, self.kshots, 
+                i, self.indices, self.faiss_index, self.lambda_param, self.options
+            )
+            
+            # 使用 self 预存好的 prefix 和 suffix (稍后在 annotate 里定义)
+            example_prompt = PromptTemplate(
+                input_variables=["content", "answer"], 
+                template='Text: """\n{content}\n"""\nAnswer: {answer}'
+            )
+            few_shot_template = FewShotPromptTemplate(
+                examples=examples,
+                example_prompt=example_prompt,
+                prefix=self.current_prefix, 
+                suffix=self.current_suffix,
+                input_variables=["input"],
+            )
+            
+            full_text_instruction = few_shot_template.format(input=item['text'])
+
+            # 4. 组装多模态消息
+            messages = _prepare_multimodal_message(
+                system_prompt="You are a professional image and text classifier.",
+                text_content=full_text_instruction,
+                image_path=item['image_path']
+            )
+
+            # 5. 调用结构化模型 (注意：这里我们用 self 里的结构化模型)x
+            print(f"--- AI Analyzing Row {i} ---")
+            response = self.structured_llm.invoke(messages)
+            
+            # 6. 返回这一步的产出，不要写 results 列表，那是自动更新的
+            return {
+                "current_index": i,
+                "temp_prediction": response.dict() # 包含 label, confidence, reason
+            }
+    
+    def _auto_update_node(self, state: AgentState):
+        """AI 信心足够，自动把预测结果记入账本，并准备处理下一行"""
+        idx = state["current_index"]
+        label = state["temp_prediction"]["label"]
+        
+        print(f"--- [Row {idx}] AI Confidence high. Auto-labeling: {label} ---")
+        
+        # 1. 更新已处理的结果字典
+        new_results = state["results"].copy()
+        new_results[idx] = label
+        
+        # 2. 从待办清单中移除这一行
+        new_pending = state["pending_indices"][1:]
+        
+        return {
+            "results": new_results,
+            "pending_indices": new_pending,
+            "temp_prediction": None # 清空临时预测
+        }
+    
+    def _human_label_node(self, state: AgentState):
+        """人工干预节点：只有在中断恢复后，读取 input()"""
+        idx = state["current_index"]
+        item = state["multimodal_data"][idx]
+        pred = state["temp_prediction"]
+        
+        print(f"\n--- [Row {idx}] Manual Intervention Required ---")
+        print(f"Text: {item['text']}")
+        print(f"AI Suggestion: {pred['label']} (Confidence: {pred['confidence']:.2f})") # 打印模型建议和具体分数
+
+        # --- 核心补丁：在这里增加显图逻辑 ---
+        from PIL import Image
+        from IPython.display import display
+        
+        img = Image.open(item['image_path'])
+        display(img)
+
+        options_hint = "/".join(self.options)
+        user_input = input(f"AI uncertain. Please provide label ({options_hint}): ")
+        
+        # 同样更新结果并移除行号
+        new_results = state["results"].copy()
+        new_results[idx] = user_input
+        
+        new_pending = state["pending_indices"][1:]
+        
+        return {
+            "results": new_results, 
+            "pending_indices": new_pending,
+            "temp_prediction": None
+        }
+    
+    # def _router_logic(self, state: AgentState):
+    #     """根据 AI 预测的信心，决定去人工窗口还是自动窗口"""
+    #     if not state["temp_prediction"]:
+    #         return END # 防错保护
+            
+    #     conf = state["temp_prediction"]["confidence"]
+        
+    #     if conf < 0.6: # 信心阈值
+    #         return "human_label"
+    #     return "auto_update"
+    def _router_logic(self, state: AgentState):
+        pred = state.get("temp_prediction") # 用 get 不会报 KeyError
+        if not pred:
+            return "human_label" # 拿不到预测，保守起见直接问人
+        
+        conf = pred.get("confidence", 0) # 拿不到信心，按 0 处理
+        idx = state["current_index"]
+        print(f">>> Row {idx} Confidence: {conf:.4f}")
+        if conf < 0.96:
+            return "human_label"
+        return "auto_update"
+    
+
+    def _build_graph(self):
+        builder = StateGraph(AgentState)
+        
+        # 添加节点
+        builder.add_node("predict", self._ai_predict_node)
+        builder.add_node("auto_update", self._auto_update_node)
+        builder.add_node("human_label", self._human_label_node)
+
+        # 连线
+        builder.add_edge(START, "predict")
+        
+        # 核心：预测完之后，走红绿灯判断
+        builder.add_conditional_edges("predict", self._router_logic, {
+            "human_label": "human_label",
+            "auto_update": "auto_update"
+        })
+        
+        # 处理完一行（无论是自动还是人工），都要判断是否还有下一行
+        def check_next_step(state: AgentState):
+            if state["pending_indices"]:
+                return "predict" # 回去处理下一个
+            return END
+
+        builder.add_conditional_edges("auto_update", check_next_step)
+        builder.add_conditional_edges("human_label", check_next_step)
+
+        # 编译并加装“红绿灯”
+        return builder.compile(
+            checkpointer=MemorySaver(), 
+            interrupt_before=["human_label"]
+        )
+  
 
     def annotate(
             self, 
@@ -309,163 +519,124 @@ class MultiModalClassifier:
             testing: bool=False,
             testing_size: int=None,
         ):
-        # Input files
+        # 1. Input files & Paths setup
         dataset_name = self.data_file.stem
-        prompt_file = self.prompts_dir / prompt_file_name
-        prompt_name = prompt_file.stem
         llm_configs = self.configs_dir / "llm_configs.json"
         index_file = str(self.outfiles_dir / "embeddings.index")
-        # embeddings = np.load(embeddings_file)
         index = faiss.read_index(index_file)
         exemplars_file = self.outfiles_dir / "exemplar_indices.json"
         indices = json.loads(exemplars_file.read_text())
+
         if len(indices) < kshots:
-            logger.info(f"The number of exemplars in the pool ({len(indices)}) is smaller than the user specified {kshots}-shots, "
-                    f"we will only use the first {len(indices)}-shots.")
             kshots = len(indices)
 
-        # Create the file to save responses
-        if testing:
-            output_file_name = f"{dataset_name}_{llm_name}_{prompt_name}_{kshots}shots_test.csv"
-        else:
-            output_file_name = f"{dataset_name}_{llm_name}_{prompt_name}_{kshots}shots.csv"
+        # 2. Output file & Checkpoint logic
+        output_file_name = f"{dataset_name}_{llm_name}_{prompt_file_name.split('.')[0]}_{kshots}shots" + ("_test.csv" if testing else ".csv")
         output_file = self.outfiles_dir / output_file_name
 
         if os.path.isfile(output_file):
             results = read_docs_from_dataframe(pd.read_csv(output_file, index_col=False), self.answer_col)
-            logger.info(f"Saving output to an existing file \n{output_file}")
+            logger.info(f"Resuming from existing file: {output_file}")
         else:
             results = []
-            logger.info(f"Saving output to a new file \n{output_file}")
+            logger.info(f"Starting new annotation file: {output_file}")
         processed_count = max(len(results), 0)
 
-        # Construct large language chat model
+        # 3. Data Preparation
+        df = load_and_validate_data(self.data_file, self.feature_col, self.answer_col, self.image_col)
+        multimodal_data = read_multimodal_docs_from_dataframe(df, self.feature_col, self.image_col, self.image_dir)
+        
+        if testing:
+            testing_size = min(testing_size, len(df)) if testing_size else len(df)
+            df = df[:testing_size]
+            multimodal_data = multimodal_data[:testing_size]
+            indices = [idx for idx in indices if idx < testing_size]
+
+        # 4. Bind variables to self for Graph access
+        self.indices = indices
+        self.faiss_index = index
+        self.kshots = kshots
+        self.lambda_param = lambda_param
+        self.df = df # 重要：供 Node 使用
+
+        # 5. LLM & Prompt Setup
         model_config = load_config(llm_configs, llm_name)
         model = create_llm(llm_name=llm_name, model_config=model_config)
+        self.structured_llm = model.with_structured_output(ClassificationResult)
 
-        # # Prepare the unlabelled data to annotate
-        # df = pd.read_csv(self.data_file, index_col=False)
-        # df = df[[self.feature_col, self.answer_col]]
-        # print("Examples of data\n", df.head(n=min(5, len(df))))
-        # if testing:
-        #     if testing_size is None:
-        #         raise ValueError("testing_size cannot be None in the testing mode. It must be a valid integer.")
-        #     if len(df) < testing_size:
-        #         logger.info(f"Provided testing_size ({testing_size}) is greater than the number of questions ({len(questions)}), "
-        #             f"we will only use the first {len(df)} questions.")
-        #         testing_size = len(df)
-
-        #     df = df[:testing_size]
-        #     indices = [idx for idx in indices if idx < testing_size]
-        
-        # Prepare the unlabelled data to annotate
-        df = load_and_validate_data(self.data_file, self.feature_col,self.answer_col,self.image_col)
-        multimodal_data = read_multimodal_docs_from_dataframe(df,self.feature_col,self.image_col,self.image_dir)
-        print("Examples of data\n", df.head(n=min(5, len(df))))
-        if testing:
-            if testing_size is None:
-                raise ValueError("testing_size cannot be None in the testing mode. It must be a valid integer.")
-            if len(df) < testing_size:
-                logger.info(f"Provided testing_size ({testing_size}) is greater than the number of questions ({len(questions)}), "
-                    f"we will only use the first {len(df)} questions.")
-                testing_size = len(df)
-            df = df[:testing_size]
-            multimodal_data=multimodal_data[:testing_size]
-            indices = [idx for idx in indices if idx < testing_size]
-            # 如果testing_size是50，那么df也被切成50，如果few-shot的例子索引超过50就会被删去
-
-
-
-
-
-        # Create the prefix and suffix from the prompt 
-        prefix = get_prompt(prompt_file=prompt_file)
-        suffix_examples = ""
-        if kshots > 0:
-            prefix = prefix + f" You're given {kshots} examples for references. " 
-            suffix_examples = f"That's all {kshots} examples. "
+        prefix_str = get_prompt(prompt_file=self.prompts_dir / prompt_file_name)
         options_str = ", ".join(self.options)
-        suffix = suffix_examples + f"""Perform the task based on the provided **IMAGE** and the **TEXT** below. 
-                    Choose the correct answer from the options ({options_str}) in a single-choice format with options in '<' and '>' and then provide analysis process or reason.
-                    Text: \"\"\"
-                    {{input}}
-                    \"\"\"
-                    Answer: """
-        # suffix = suffix + "Perform the task based on the next given text, choose the correct answer from the options (" + ", ".join(self.options) + ') in a single-choice format with options in \'<\' and \'>\'.\nText: """\n{input}\n"""\nAnswer: '
-        call_llm_with_limits = call_llm_wrapper(self.requests_per_period, self.secondf_per_period)
+        
+        # 存入 self 供 Node 动态拼装
+        self.current_prefix = prefix_str + (f" You're given {kshots} examples for references. " if kshots > 0 else "")
+        suffix_examples = f"That's all {kshots} examples. " if kshots > 0 else ""
+        self.current_suffix = suffix_examples + f"""Perform the task based on the provided **IMAGE** and the **TEXT** below. 
+                Choose the correct label from the options ({options_str}). 
+                Explain your analysis process and give the final classification.
+                Text: \"\"\"
+                {{input}}
+                \"\"\"
+                Answer: """
 
+        # 6. LangGraph Execution
+        all_indices = df.index.tolist()
+        pending = all_indices[processed_count:] 
+
+        if not pending:
+            logger.info("All instances already processed.")
+            return
+
+        initial_state = {
+            "pending_indices": pending,
+            "current_index": None,
+            "results": {},
+            "multimodal_data": multimodal_data,
+            "temp_prediction": None,
+            "messages": [],
+            "image_path": None
+        }
+
+        if not hasattr(self, "hitl_app"):
+            self.hitl_app = self._build_graph()
+
+        config = {"configurable": {"thread_id": f"job_{dataset_name}"}}
+        current_state = self.hitl_app.get_state(config)
+        # 核心漏洞修复：判定是新任务还是继续任务
+        input_data = initial_state if not current_state.values else None
+
+        print(f"--- Starting Agentic Annotation (Pending: {len(pending)} rows) ---")
         start_time = time.time()
-        # Call LLM to annotate unlabelled instances
+        
         try:
-            progress_bar = tqdm(total=len(df), initial=processed_count, disable=disable_progress_bar, leave=False)
-            
-            for i, item in enumerate(multimodal_data):
-                if i < processed_count:
-                    continue
-                
-                if i not in indices:
-                    examples = select_kshots(
-                        df, self.feature_col, self.answer_col, kshots, i, indices, index, lambda_param, self.options
-                    )
-                    example_prompt = PromptTemplate(
-                        input_variables=["content", "answer"], template='Text: """\n{content}\n"""\nAnswer: {answer}'
-                    )
+            for event in self.hitl_app.stream(input_data, config):
+                if "__interrupt__" in event:
+                    # 再次尝试从 state 拿当前索引，确保打印准确
+                    snap = self.hitl_app.get_state(config)
+                    curr = snap.values.get("current_index", "Unknown")
+                    print(f"\n[PAUSED] Row {curr} needs manual intervention. Run annotate() again after providing input.")
+                    return 
 
-# 2. 生成 Few-shot 文本提示词
-                    example_prompt = PromptTemplate(
-                        input_variables=["content", "answer"], 
-                        template='Text: """\n{content}\n"""\nAnswer: {answer}'
-                    )
-                    few_shot_template = FewShotPromptTemplate(
-                        examples=examples,
-                        example_prompt=example_prompt,
-                        prefix=prefix,
-                        suffix=suffix,
-                        input_variables=["input"],
-                    )
-                    
-                    # 3. 渲染出完整的文本指令 (含例子 + 当前文本)
-                    # few_shot_template.format 会把 item['text'] 填入 suffix 里的 {input}
-                    full_text_instruction = few_shot_template.format(input=item['text'])
+            # 7. Collect Results from Graph
+            final_snapshot = self.hitl_app.get_state(config)
+            new_results_dict = final_snapshot.values.get("results", {})
+            for idx in sorted(new_results_dict.keys()):
+                results.append(new_results_dict[idx])
 
-                    # 4. 重点：组装多模态消息体 (Text + Image)
-                    # 调用你写在 llm_contribs 里的那个翻译官函数
-                    messages = _prepare_multimodal_message(
-                        system_prompt="You are a professional policy image and text classifier.",
-                        text_content=full_text_instruction,
-                        image_path=item['image_path']
-                    )
+        except Exception as e:
+            logger.error(f"Error during agentic annotation: {e}")
 
-                    # 5. 调用模型（注意这里直接用 model.invoke，因为 LangChain 的 Chain 
-                    # 默认处理字符串，处理多模态 Message List 建议直接 invoke）
-                    response = call_llm_with_limits(model.invoke, messages)
-                    result = response.content # 获取模型返回的文本内容
-                    
-                else:
-                    # 如果这一行本身就是例子，直接从 df 里拿正确答案
-                    result = df.loc[i, self.answer_col]
-                
-                results.append(result)
-                progress_bar.update(1)
-                
-            progress_bar.close()
-            
-        except Exception as e:  # Naked execpt, blame the your LLM API
-            logger.error(f"Error when calling LLM API to annotate texts: {e}")
-            
         finally:
-            # Track and print the computation time
+            # 8. Post-processing & Saving
             end_time = time.time()
             elapsed = end_time - start_time
-            hours, minutes, secondf = track_computation_time(elapsed)
-            logger.info(f"Computation time: {int(hours):02}:{int(minutes):02}:{int(secondf):02}")
+            hours, minutes, seconds = track_computation_time(elapsed)
+            logger.info(f"Process Time: {int(hours):02}:{int(minutes):02}:{int(seconds):02}")
+            
             if results:
                 results_df = pd.DataFrame()
                 results_df[self.answer_col] = results
                 results_df.to_csv(output_file, index=False)
-                logger.info(f"Results saved to {output_file}")
-            else:
-                raise Exception("Empty results, please check the log.")
+                logger.info(f"Progress synced to: {output_file}")
 
     def cot_mismatch_solver(
             self,

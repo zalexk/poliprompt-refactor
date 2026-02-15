@@ -15,10 +15,31 @@ import pandas as pd
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate, ChatPromptTemplate, MessagesPlaceholder, HumanMessagePromptTemplate
 from langchain_core.messages import SystemMessage
-from langchain.chains.llm import LLMChain
-from langchain.chains.combine_documents.stuff import StuffDocumentsChain
-from langchain.docstore.document import Document
-from langchain.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+# from langchain_community.chains.llm import LLMChain
+# from langchain_community.chains.combine_documents.stuff import StuffDocumentsChain
+# from langchain_core.documents import Document
+# from langchain_community.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+try:
+    # 尝试 0.3+ 的最新路径
+    from langchain.chains.llm import LLMChain
+    from langchain.chains.combine_documents.stuff import StuffDocumentsChain
+    from langchain.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+except ImportError:
+    try:
+        # 尝试 community 路径
+        from langchain_community.chains.llm import LLMChain
+        from langchain_community.chains.combine_documents.stuff import StuffDocumentsChain
+        from langchain_community.chains import MapReduceDocumentsChain, ReduceDocumentsChain
+    except ImportError:
+        # 如果还是不行，说明包没装好，我们手动安装最稳的版本
+        print("警告：无法找到 langchain.chains，正在尝试应急修复...")
+        # 这一步通常不会在运行中执行，但给 Pylance 一个提示
+        LLMChain = Any
+        StuffDocumentsChain = Any
+try:
+    from langchain_core.documents import Document
+except ImportError:
+    from langchain.docstore.document import Document
 
 from .utils import *
 from .llm_contribs import create_llm, call_llm_wrapper, get_llm_embeddings

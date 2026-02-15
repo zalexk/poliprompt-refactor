@@ -13,112 +13,45 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2409.01466-<COLOR>.svg)](https://arxiv.org/pdf/2409.01466)
 
 
-# PoliPrompt
-PoliPrompt is a high-performance, cost-effective LLM-based text classification framework designed for political science research. It automates prompt optimization and dynamically selects exemplars during few-shot learning inference to improve the accuracy of classification tasks, especially in the context of sentiment analysis, stance detection, and more.
+# 🚀 PoliPrompt: Multimodal Agentic Framework
 
-## Getting Started
-### A. Set Up Virtual Environment and Install PoliPrompt Package
+PoliPrompt is a state-of-the-art computational social science tool for automated policy analysis. This project has evolved from a linear script into a **Stateful Agentic System**, integrating multimodal perception, high-performance retrieval, and Human-in-the-Loop (HITL) active learning.
 
-1. **Use the following command to display your current directory (user home directory):**
-   
-```bash
-pwd
-```
+## 🛠 Recent Progress (Milestones)
 
-2. **Navigate to the Directory (e.g. user home directory) Where You Want to Set Up the Virtual Environment**
-   
-```bash
-cd ~
-```
+### 1. Multimodal Reasoning (Week 1)
+- **Feature**: Joint Image-Text Processing.
+- **Implementation**: Integrated **Qwen3-VL-Embedding** (1024-dim fused vectors) and **GPT-4o** vision reasoning.
+- **Outcome**: Successfully identified nuanced visual cues (e.g., LGBTQ+ flags, political iconography) to improve classification reasoning.
 
-3. **Run the following command to create a virtual environment named poliprompt_env (changeable):**
-   
-```bash
-python3 -m venv poliprompt_env
-```
+### 2. High-Performance Vector Storage (Week 2)
+- **Feature**: Transitioned to **Faiss (Facebook AI Similarity Search)**.
+- **Implementation**: Replaced `.npy` with `IndexFlatIP` and L2 normalization.
+- **Benefit**: Optimized retrieval speed and memory efficiency, enabling the system to scale to datasets with 10k+ instances.
 
-4. **Activate the Virtual Environment**
-   
-```bash
-source poliprompt_env/bin/activate
-```
+### 3. Agentic HITL & Active Learning (Week 3 - Current)
+- **Feature**: **LangGraph-driven** State Machine for Adaptive Annotation.
+- **Architecture**:
+  - **Persistence**: Implemented `MemorySaver` to provide "Save-and-Resume" capability.
+  - **Interrupt Mechanism**: Automatic system pause (`interrupt_before`) at the `human_labeling` node when model confidence is low.
+- **User Workflow**:
+  - If `Confidence < 0.96`, system prints: `[PAUSED] Row X needs manual intervention.`
+  - **To Resume**: User reruns the cell and provides input via the IDE prompt. The agent updates its state and proceeds seamlessly.
 
-5. **After activating the environment, install the PoliPrompt package:**
-```bash
-pip install PoliPrompt
-```
+---
 
-6. **Download the Poliprompt source code for examples**
-   - To run the example code, users need to download the source code for notebooks and examples
-   - Visit [project home page](https://github.com/geshijoker/PoliPrompt/tree/main) on github
-   - Download the project by `git clone HTTP/SSH` in terminal or Download ZIP (please refer to github basic tutorials)
-   - Put it in user specified location on local machine, for example, the user home directory `~`.
+## 🔬 Research Findings & Analysis
+During testing on the *Harmful Memes* dataset, a critical **Calibration Issue** was observed:
+- **Over-confidence**: GPT-4o consistently assigns high confidence (e.g., 0.95) despite incorrect classifications.
+- **Insight**: This underscores the necessity of HITL for high-stakes social science research where model self-evaluation is unreliable.
 
-## B. Register and Obtain API Keys
+---
 
-To use PoliPrompt effectively, you will need API keys from various large language model platforms. Follow these steps to register and retrieve your keys:
+## 📅 Future Roadmap
+- **Active Learning Loop**: Automate the injection of human-labeled samples back into the `exemplar_indices.json` pool.
+- **Dynamic Thresholding**: Allow users to set custom confidence thresholds for different levels of supervision.
+- **Disagreement Triggering**: Transition from confidence-based to multi-model disagreement-based intervention.
 
-1. **Register on LLM Platforms:**
-   - Visit the links below to sign up for API access from popular large language model providers:
-     - [OpenAI](https://beta.openai.com/signup/) – Sign up for GPT-based APIs.
-     - [Anthropic](https://www.anthropic.com/product) – Register for Claude-based APIs.
-     - [Voyage AI](https://voyage.ai) – Obtain access to additional AI tools.
-
-2. **Generate and SAVE API Keys:**
-   - Once registered, navigate to the API section of each platform's dashboard.
-   - Generate new API keys.
-   - Copy the keys for use in your `.env` file. 
-
-3. **Create and Save the `.env` File:**
-   - In your terminal, navigate to the root directory of your project (e.g., `~/PoliPrompt`).
-   - Run the following command to open a new `.env` file for editing:
-   
-   ```bash
-   vim .env
-   ```
-
-   - In the `.env` file, add your API keys in the following format:
-
-   ```bash
-   OPENAI_API_KEY=your-openai-api-key
-   ANTHROPIC_API_KEY=your-anthropic-api-key
-   VOYAGE_API_KEY=your-voyage-api-key
-   ```
-
-## C. Run the Example Code
-
-### 1. **Install Jupyter Notebook**
-If Jupyter Notebook is not already installed, you can install it using pip:
-
-```bash
-pip install notebook
-```
-2. **To use the PoliPrompt virtual environment in Jupyter, you need to create a new kernel:**
-
-```bash
-pip install ipykernel
-python -m ipykernel install --user --name=PoliPrompt_env --display-name "PoliPrompt Kernel"
-```
-
-3. **Navigate to the folder where the TopicExperiment.ipynb file is located. For example, if the file is in the notebooks folder inside the PoliPrompt directory, run:**
-
-```bash
-cd ~/PoliPrompt/notebooks
-```
-
-4. **Start Jupyter Notebook by running the following command:**
-
-```bash
-jupyter notebook
-```
-
-5. **Select the PoliPrompt Kernel**
-   -Once the notebook is open:
-   -Navigate to the top-right corner of the notebook interface.
-   -Click on "Kernel" → "Change Kernel."
-   -Select PoliPrompt Kernel from the dropdown list.
-
-6. **After selecting the kernel, you can run the example code (TopicExperiment.ipynb) inside the notebook.**
 
 ## Citation
 To cite the **[PoliPrompt](https://arxiv.org/abs/2409.01466)** paper, please use the following BibTeX reference:
