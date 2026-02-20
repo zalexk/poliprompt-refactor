@@ -557,7 +557,7 @@ class MultiModalClassifier:
         self.faiss_index = index
         self.kshots = kshots
         self.lambda_param = lambda_param
-        self.df = df # 重要：供 Node 使用
+        self.df = df 
 
         # 5. LLM & Prompt Setup
         model_config = load_config(llm_configs, llm_name)
@@ -601,7 +601,7 @@ class MultiModalClassifier:
 
         config = {"configurable": {"thread_id": f"job_{dataset_name}"}}
         current_state = self.hitl_app.get_state(config)
-        # 核心漏洞修复：判定是新任务还是继续任务
+        
         input_data = initial_state if not current_state.values else None
 
         print(f"--- Starting Agentic Annotation (Pending: {len(pending)} rows) ---")
