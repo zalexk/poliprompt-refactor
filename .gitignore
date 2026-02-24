@@ -1,4 +1,8 @@
 # Customize
+# test dataset
+examples/HatefulMemes/
+examples/HarmfulMemes-tiny/
+
 # Unsupported Dockerfile
 Dockerfile
 
