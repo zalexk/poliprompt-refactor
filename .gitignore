@@ -1,4 +1,9 @@
 # Customize
+
+# database files
+*.db
+*.sqlite
+
 # test dataset
 examples/HatefulMemes/
 examples/HarmfulMemes-tiny/
