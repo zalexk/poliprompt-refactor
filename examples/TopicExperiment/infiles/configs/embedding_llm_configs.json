@@ -9,6 +9,6 @@
     },
     "qwen": {
         "model": "qwen3-vl-embedding",
-        "batch_size": 1
+        "batch_size": 5
     }
 }

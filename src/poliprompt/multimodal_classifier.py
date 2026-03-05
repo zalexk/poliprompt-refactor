@@ -48,10 +48,15 @@ class AgentState(TypedDict):
     current_index: Optional[int]
     multimodal_data: List[dict]
 
-    l1_results: List[str]   # Model A 的 3 个结果
-    l2_result: str          # Model B 的 1 个结果
-    l3_results: List[str]   # Advanced 的 2 个结果 (CoT)
+    l1_res: str               # 记录 L1 原始答案
+    l2_res: str               # 记录 L2 原始答案
+    l3_res_list: List[str]    # 记录 L3 两次 CoT 的答案
+    
+    rag_distances: List[float]
+    rag_labels: List[str] 
+    rag_indices: List[int]
 
+    start_time: float 
     results: Dict[str, dict]
     final_path: str         # 记录该样本走过的路径 (e.g., "L1_3/3", "L3_Consensus", "HITL")
     token_usage: Dict[str, int] # {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0} 
@@ -263,365 +268,173 @@ class MultiModalClassifier:
         # 最终返回总结出的规则，实现动态 Prompt 闭环
         return consolidated_rules
     
-    # def _prepare_agent_messages(self, idx, item, include_image=True, is_cot=False):
-    #     """
-    #     全能型消息拼装：
-    #     1. 自动根据 RAG 选出 k-shots
-    #     2. 动态拼装 System Prompt (基础 + MapReduce 规则)
-    #     3. 动态拼装 User Content (文字 + 图片)
-    #     """
-    #     # --- 1. 获取 Few-shot 示例 (复用 select_kshots) ---
-    #     # 注意：这里需要导入或者确保 select_kshots 在作用域内
-    #     examples = select_kshots(
-    #         self.df, self.feature_col, self.answer_col, self.kshots, 
-    #         idx, self.indices, self.faiss_index, self.lambda_param, self.options
-    #     )
-        
-    #     # --- 2. 动态构建 System Prompt ---
-    #     # 这里的 self.current_prefix 是你在 annotate 开头读取的那个原始 prompt
-    #     system_content = self.current_prefix 
-        
-    #     # 重点：如果之前跑过 optimize 任务，这里直接把生成的规则加上去，实现动态闭环
-    #     if hasattr(self, 'enhanced_rules') and self.enhanced_rules:
-    #         system_content += f"\n\n### Critical Rules from Human Exemplars:\n{self.enhanced_rules}"
-            
-    #     system_content += "\nClassify the following political content accurately."
-
-    #     # --- 3. 动态构建 User Content ---
-    #     user_text = "### Reference Examples (Few-shot):\n"
-    #     for i, ex in enumerate(examples):
-    #         user_text += f"Example {i+1}:\nText: {ex['content']}\nAnswer: {ex['answer']}\n---\n"
-        
-    #     user_text += f"\n### Current Task:\nText: {item['text']}\n"
-        
-    #     if is_cot:
-    #         user_text += "\nRequirement: Think step by step. Analyze the visual cues and textual context before choosing the label."
-        
-    #     user_text += f"\nFinal Step: Select one label from the options: [{', '.join(self.options)}]."
-
-    #     # 组装消息列表
-    #     # 显式声明类型为 Any，Pylance 就会闭嘴，且不需要加 ignore
-    #     user_payload: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
-        
-    #     # 处理图片 (多模态开关)
-    #     if include_image and item.get('image_path'):
-    #         # 这里你可以根据 logic 传入 low 或 high
-    #         # 建议：L1 用 low 省钱，L3 用 high 保准
-    #         detail_level = "high" if is_cot else "low" 
-            
-    #         from .utils import encode_image # 确保路径正确
-    #         b64_img = encode_image(item['image_path'])
-    #         user_payload.append({
-    #             "type": "image_url",
-    #             "image_url": {
-    #                 "url": f"data:image/jpeg;base64,{b64_img}",
-    #                 "detail": detail_level  # 顺手把这个优化也加上
-    #             }
-    #         })
-
-    #     return [
-    #         SystemMessage(content=system_content),
-    #         HumanMessage(content=user_payload)
-    #     ]
 
     def _prepare_agent_messages(self, idx, item, include_image=True, is_cot=False):
-        # 1. 获取示例
-        examples = select_kshots(self.df, self.feature_col, self.answer_col, self.kshots, 
-                                idx, self.indices, self.faiss_index, self.lambda_param, self.options)
+        # 1. 卸货：接住四元组
+        examples, dists, labels, r_indices = select_kshots(
+            self.df, self.feature_col, self.image_col, self.answer_col, 
+            self.kshots, idx, self.indices, self.faiss_index, self.lambda_param, self.options
+        )
         
+        # 2. 构建 System Content
         system_content = self.current_prefix 
         if hasattr(self, 'enhanced_rules') and self.enhanced_rules:
-            system_content += f"\n\n### Critical Rules:\n{self.enhanced_rules}"
+            system_content += f"\n\n### Critical Rules from Human Exemplars:\n{self.enhanced_rules}"
         
-        # 2. 构建 User Content 列表 (List[Dict[str, Any]])
+        # 3. 初始化 User Payload
         user_payload: List[Dict[str, Any]] = []
         user_payload.append({"type": "text", "text": "### Reference Examples (Analyze both Image and Text):\n"})
 
-        # --- 【核心改动：把示例的图片也塞进去】 ---
+        # --- 处理 Few-shot 示例 (带图) ---
+        from .utils import encode_image
         for i, ex in enumerate(examples):
-            # 添加示例文字
             user_payload.append({
                 "type": "text", 
                 "text": f"Example {i+1}:\nText: {ex['content']}\nAnswer: {ex['answer']}"
             })
-            # 添加示例图片 (如果有路径)
-            if ex.get('image_path'):
-                b64_ex_img = encode_image(ex['image_path'])
+            
+            # 处理示例路径（确保路径完整）
+            # 如果路径里没包含 image_dir，我们才补。
+            raw_path = ex.get('image_path', '')
+            full_ex_path = str(Path(self.image_dir) / raw_path) if str(self.image_dir) not in str(raw_path) else str(raw_path)
+            
+            if os.path.exists(full_ex_path):
+                ext = Path(full_ex_path).suffix.lower()
+                mime = "image/png" if ext == ".png" else "image/jpeg"
+                b64_ex_img = encode_image(full_ex_path)
                 user_payload.append({
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{b64_ex_img}",
-                        "detail": "low"  # 示例图用 low 模式，省钱！
-                    }
+                    "image_url": {"url": f"data:{mime};base64,{b64_ex_img}", "detail": "low"}
                 })
             user_payload.append({"type": "text", "text": "---\n"})
 
-        # 3. 添加当前任务
-        task_text = f"\n### Current Task:\nText: {item['text']}\n"
-        if is_cot:
-            task_text += "Requirement: Think step by step. Analyze the visual cues and textual context before choosing the label."
-        task_text += f"\nFinal Step: Select one label from the options: [{', '.join(self.options)}]."
+        # 4. 处理当前任务 (Query)
+        user_payload.append({"type": "text", "text": f"\n### Current Task:\nText: {item['text']}"})
         
-        user_payload.append({"type": "text", "text": task_text})
-        
-        # 4. 添加当前样本图片
         if include_image and item.get('image_path'):
-            detail_level = "high" if is_cot else "low" 
-            b64_img = encode_image(item['image_path'])
-            user_payload.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{b64_img}",
-                    "detail": detail_level
-                }
-            })
+            query_img_path = item['image_path'] # 这个在初始化时通常已经拼好了
+            if os.path.exists(query_img_path):
+                ext = Path(query_img_path).suffix.lower()
+                mime = "image/png" if ext == ".png" else "image/jpeg"
+                b64_query_img = encode_image(query_img_path)
+                user_payload.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64_query_img}", "detail": "high" if is_cot else "low"}
+                })
 
-        return [
-            SystemMessage(content=system_content),
-            HumanMessage(content=user_payload)
-        ]
+        messages = [SystemMessage(content=system_content), HumanMessage(content=user_payload)]
+        
+        # 返回：消息 + 观测数据
+        return messages, dists, labels, r_indices
     
-    # --- Layer 1: Base Model A (3 Inferences) ---
-    # def _l1_node(self, state: AgentState):
-    #     idx = state["pending_indices"][0] 
-    #     item = state["multimodal_data"][idx]
-        
-    #     messages = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
-        
-    #     results = []
-    #     l1_usage = {"prompt_tokens": 0, "completion_tokens": 0}
-        
-    #     print(f"--- [Row {idx}] Layer 1 (Base Model A) Analyzing (3 times) ---")
-        
-    #     for i in range(3):
-    #         # 重要：现在的 response 是一个字典 {"parsed": ..., "raw": ...}
-    #         raw_res = self.structured_llm_a.invoke(messages)
-            
-    #         # 提取标签
-    #         parsed = raw_res["parsed"]
-    #         results.append(parsed.label)
-            
-    #         # 提取 Token
-    #         raw_msg = raw_res["raw"]
-    #         if hasattr(raw_msg, "usage_metadata"):
-    #             usage = raw_msg.usage_metadata
-    #             l1_usage["prompt_tokens"] += usage.get("input_tokens", 0)
-    #             l1_usage["completion_tokens"] += usage.get("output_tokens", 0)
-
-    #     new_usage = state["token_usage"].copy()
-    #     new_usage["prompt_tokens"] += l1_usage["prompt_tokens"]
-    #     new_usage["completion_tokens"] += l1_usage["completion_tokens"]
-    #     new_usage["total_cost"] += calculate_token_cost(self.llm_a_name, l1_usage["prompt_tokens"], l1_usage["completion_tokens"])
-
-    #     return {
-    #         "current_index": idx,
-    #         "l1_results": results,
-    #         "token_usage": new_usage
-    #     }
-
+   
     def _l1_node(self, state: AgentState):
         idx = state["pending_indices"][0] 
         item = state["multimodal_data"][idx]
-        messages = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
         
-        print(f"--- [Row {idx}] Layer 1 (Model A) Analyzing (1 time) ---")
+        # 1. 记录整行处理的开始时间
+        row_start_time = time.time()
+        
+        # 2. 卸货：接住四元组 (消息, 距离, 标签, 原始索引)
+        messages, dists, labels, r_indices = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
+        
+        print(f"--- [Row {idx}] Layer 1 (Model A) Analyzing ---")
+        
+        # 3. 调用模型 (带 include_raw=True)
         raw_res = self.structured_llm_a.invoke(messages)
+        parsed = raw_res["parsed"]
+        raw_msg = raw_res["raw"]
         
-        # 更新 Token 消耗
+        # 4. 更新 Token 和 成本
         new_usage = state["token_usage"].copy()
-        if hasattr(raw_res["raw"], "usage_metadata"):
-            usage = raw_res["raw"].usage_metadata
+        if hasattr(raw_msg, "usage_metadata"):
+            usage = raw_msg.usage_metadata
             new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
             new_usage["completion_tokens"] += usage.get("output_tokens", 0)
             new_usage["total_cost"] += calculate_token_cost(self.llm_a_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
 
+        # 5. 返回所有观测指标
         return {
             "current_index": idx,
-            "l1_results": [raw_res["parsed"].label], # 存入列表，保持格式统一
+            "start_time": row_start_time,
+            "l1_res": parsed.label,
+            "temp_prediction": parsed.dict(), # 包含 reason，供后期字数分析
+            "rag_distances": dists,
+            "rag_labels": labels,
+            "rag_indices": r_indices,
             "token_usage": new_usage
         }
 
     # --- Layer 2: Secondary Model B (1 Inference) ---
     def _l2_node(self, state: AgentState):
-        idx = state["current_index"] # 注意这里用 current_index，因为 L1 已经设置过了
+        idx = state["current_index"]
         item = state["multimodal_data"][idx]
         
-        messages = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
+        # 同样获取消息，但我们只取 messages 即可，dists 等已经在 L1 存过了
+        messages, _, _, _ = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
         
         print(f"--- [Row {idx}] Layer 2 (Model B) Cross-checking ---")
-        raw_res = self.structured_llm_b.invoke(messages)
+        try:
+            raw_res = self.structured_llm_b.invoke(messages)
+            parsed = raw_res["parsed"]
+            raw_msg = raw_res["raw"]
+
+            new_usage = state["token_usage"].copy()
+            if hasattr(raw_msg, "usage_metadata"):
+                usage = raw_msg.usage_metadata
+                new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
+                new_usage["completion_tokens"] += usage.get("output_tokens", 0)
+                new_usage["total_cost"] += calculate_token_cost(self.llm_b_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+
+            return {
+                "l2_res": parsed.label,
+                "temp_prediction": parsed.dict(),
+                "token_usage": new_usage
+            }
         
-        parsed = raw_res["parsed"]
-        raw_msg = raw_res["raw"]
-
-        new_usage = state["token_usage"].copy()
-        if hasattr(raw_msg, "usage_metadata"):
-            usage = raw_msg.usage_metadata
-            p_tokens = usage.get("input_tokens", 0)
-            c_tokens = usage.get("output_tokens", 0)
-            new_usage["prompt_tokens"] += p_tokens
-            new_usage["completion_tokens"] += c_tokens
-            new_usage["total_cost"] += calculate_token_cost(self.llm_b_name, p_tokens, c_tokens)
-
-        return {
-            "l2_result": parsed.label,
-            "token_usage": new_usage
-        }
+        except Exception as e:
+            # 4. 【核心改进】如果报错（比如安全审查 400），捕获它！
+            print(f"⚠️ [Row {idx}] Layer 2 FAILED/BLOCKED. Error: {e}")
+            print(f"--- [Row {idx}] Escalating to L3 due to Model B failure. ---")
+            
+            # 我们返回一个特殊的标志
+            # 逻辑：因为 L1 的结果通常是 "0" 或 "1"，所以这个字符串肯定不相等
+            # 路由器 _l2_router 看到不相等，就会自动送它去 L3
+            return {
+                "l2_res": "MODEL_B_FAIL_OR_BLOCKED", 
+                "final_path": "L2_Safety_Bypass" # 记一笔，方便后期分析
+            }
+    
     # --- Layer 3: Advanced Model (2 Inferences with CoT) ---
     def _l3_node(self, state: AgentState):
         idx = state["current_index"]
         item = state["multimodal_data"][idx]
         
-        messages = self._prepare_agent_messages(idx, item, include_image=True, is_cot=True)
+        # 专家层开启 is_cot=True
+        messages, _, _, _ = self._prepare_agent_messages(idx, item, include_image=True, is_cot=True)
         
-        results = []
-        l3_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        l3_results = []
+        new_usage = state["token_usage"].copy()
+        last_parsed = None
         
         print(f"--- [Row {idx}] Layer 3 (Advanced Model) Resolving (2 times CoT) ---")
         
         for i in range(2):
             raw_res = self.structured_llm_adv.invoke(messages)
-            
-            parsed = raw_res["parsed"]
-            results.append(parsed.label)
+            last_parsed = raw_res["parsed"]
+            l3_results.append(last_parsed.label)
             
             raw_msg = raw_res["raw"]
             if hasattr(raw_msg, "usage_metadata"):
                 usage = raw_msg.usage_metadata
-                l3_usage["prompt_tokens"] += usage.get("input_tokens", 0)
-                l3_usage["completion_tokens"] += usage.get("output_tokens", 0)
-
-        new_usage = state["token_usage"].copy()
-        new_usage["prompt_tokens"] += l3_usage["prompt_tokens"]
-        new_usage["completion_tokens"] += l3_usage["completion_tokens"]
-        new_usage["total_cost"] += calculate_token_cost(self.llm_adv_name, l3_usage["prompt_tokens"], l3_usage["completion_tokens"])
+                new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
+                new_usage["completion_tokens"] += usage.get("output_tokens", 0)
+                new_usage["total_cost"] += calculate_token_cost(self.llm_adv_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
 
         return {
-            "l3_results": results,
+            "l3_res_list": l3_results,
+            "temp_prediction": last_parsed.dict() if last_parsed else None,
             "token_usage": new_usage
-        }
-    
-    # def _auto_update_node(self, state: AgentState):
-    #     idx = state["current_index"]
-    #     l1 = state.get("l1_results", [])
-    #     l2 = state.get("l2_result")
-    #     l3 = state.get("l3_results", [])
-        
-    #     final_label = None
-    #     path_taken = ""
-
-    #     # 1. 如果 L1 三次全中 (3/3)
-    #     if len(set(l1)) == 1 and len(l1) > 0:
-    #         final_label = l1[0]
-    #         path_taken = "L1_Consensus(3/3)"
-            
-    #     # 2. 如果 L1 是 2/1 分歧，看 L2 (B模型) 是不是同意那个“2”
-    #     elif l2:
-    #         l1_majority = Counter(l1).most_common(1)[0][0] # 选出 A 里的众数
-    #         if l2 == l1_majority:
-    #             final_label = l2
-    #             path_taken = "L2_CrossMatch"
-    #         else:
-    #             # 如果 B 也不同意 A 的众数，这时候应该已经去 L3 了
-    #             # 这个 elif 只是为了最终盖章
-    #             pass
-        
-    #     # 3. 如果走到了 L3 (高级模型) 且 2/2 一致
-    #     if not final_label and len(set(l3)) == 1 and len(l3) == 2:
-    #         final_label = l3[0]
-    #         path_taken = "L3_AdvancedConsensus"
-            
-    #     # 4. 兜底方案 (如果前面都没定论，比如 1/1/1 分歧且 L3 也打架)
-    #     if not final_label:
-    #         final_label = l3[0] if l3 else (l2 if l2 else l1[0])
-    #         path_taken = "HITL"
-
-    #     print(f"--- [Row {idx}] Finalizing: Label={final_label}, Path={path_taken} ---")
-
-    #     # 1. 更新结果账本
-    #     new_results = state["results"].copy()
-    #     new_results[str(idx)] = {
-    #         "label": final_label,
-    #         "path": path_taken,
-    #         "cost": state["token_usage"]["total_cost"] # 记录累计到这一行的成本
-    #     }
-
-    #     # 2. 从待办清单移除
-    #     new_pending = state["pending_indices"][1:]
-
-    #     print(f"Progress: {len(new_results)} / {len(state['multimodal_data'])} rows completed.")
-        
-    #     # 3. 重置临时状态，为下一行做准备
-    #     return {
-    #         "results": new_results,
-    #         "pending_indices": new_pending,
-    #         "l1_results": [],
-    #         "l2_result": None,
-    #         "l3_results": [],
-    #         "temp_prediction": None,
-    #         "final_path": path_taken # 存入状态以便导出
-    #     }
-
-    def _auto_update_node(self, state: AgentState):
-        idx = state["current_index"]
-        l1 = state.get("l1_results", [])
-        l2 = state.get("l2_result")
-        l3 = state.get("l3_results", [])
-        
-        from collections import Counter
-        
-        final_label = None
-        path_taken = ""
-
-        # --- v3.0 路径判定优先级逻辑 (从最深节点开始判) ---
-        
-        # 情况 A: 走到了 L3 (高级专家)
-        if l3 and len(l3) > 0:
-            if len(set(l3)) == 1:
-                final_label = l3[0]
-                path_taken = "L3_Expert_Consensus"
-            else:
-                final_label = l3[0] # 依然以 L3 第一次结果为准，但标记为 HITL 边缘
-                path_taken = "L3_Expert_Inconsistent" # 实际上这种情况本应进 HITL，这里做个记录
-        
-        # 情况 B: 走到了 L2 (异构仲裁成功)
-        elif l2 is not None:
-            # 在 v3 逻辑中，如果能走到 auto_update 且有 l2 且没 l3，说明 A == B 成功
-            final_label = l2
-            path_taken = "L2_Heterogeneous_Match"
-            
-        # 情况 C: 兜底 (理论上 v3 至少会走完 L2)
-        else:
-            final_label = l1[0] if l1 else None
-            path_taken = "L1_Initial_Exit"
-
-        # 增加一个 HITL 的标记 (如果 state 里有这个标记)
-        if state.get("final_path") == "HITL_Manual":
-            # 如果是人工进来的，直接保留人工路径
-            pass # human_label_node 已经处理过了
-
-        print(f"--- [Row {idx}] Finalizing: Label={final_label}, Path={path_taken} ---")
-
-        # 1. 更新结果账本
-        new_results = state["results"].copy()
-        new_results[str(idx)] = {
-            "label": final_label,
-            "path": path_taken,
-            "cost": state["token_usage"]["total_cost"]
-        }
-
-        # 2. 从待办清单移除
-        new_pending = state["pending_indices"][1:]
-        print(f"Progress: {len(new_results)} / {len(state['multimodal_data'])} rows completed.")
-        
-        return {
-            "results": new_results,
-            "pending_indices": new_pending,
-            "l1_results": [],
-            "l2_result": None,
-            "l3_results": [],
-            "temp_prediction": None,
-            "final_path": path_taken
         }
     
     def _human_label_node(self, state: AgentState):
@@ -629,91 +442,141 @@ class MultiModalClassifier:
         item = state["multimodal_data"][idx]
         
         print(f"\n--- [Row {idx}] HUMAN INTERVENTION REQUIRED ---")
-        print(f"Logic: L1, L2, L3 all failed to reach a definitive consensus.")
+        print(f"Logic: AI nodes failed to reach a high-confidence consensus.")
         print(f"Text: {item['text']}")
         
-        # 显示图片 (保持你之前的优秀习惯)
+        # 1. 显示图片
         from PIL import Image
         from IPython.display import display
         img = Image.open(item['image_path'])
         display(img)
 
+        # 2. 获取人工标签
         options_hint = "/".join(self.options)
         user_input = input(f"Please provide the definitive label ({options_hint}): ")
 
-        # --- 核心新增：Active Learning 闭环 ---
-        
-        # 1. 把序号加入“精英名单”
-        if idx not in self.indices:
-            self.indices.append(idx)
-            # 持久化序号 JSON
-            exemplars_file = self.outfiles_dir / "exemplar_indices.json"
-            with open(exemplars_file, "w") as f:
-                json.dump(self.indices, f, indent=4)
-        
-        # 2. 【关键！】把人类给出的答案写回内存中的 DataFrame
-        # 这样下一个样本进行 RAG 检索到这一行时，就能拿到 user_input 了
+        # 3. Active Learning 闭环：更新内存 DF（确保 RAG 能搜到新标签）
         self.df.at[idx, self.answer_col] = user_input
         
-        print(f"✅ [Row {idx}] added to pool with label '{user_input}'. Next samples will use this as a reference.")
+        # 4. 如果不在精英池，追加进去并同步到磁盘
+        if idx not in self.indices:
+            self.indices.append(idx)
+            with open(self.outfiles_dir / "exemplar_indices.json", "w") as f:
+                json.dump(self.indices, f, indent=4)
+            print(f"✅ [Row {idx}] added to Exemplar Pool.")
 
-        # --- (记录结果到 state 的逻辑保持不变) ---
+        # 5. 只返回人工决策结果，标记路径为 HITL_Manual
+        return {
+            "temp_prediction": {"label": user_input, "reason": "Human-in-the-loop validation"},
+            "final_path": "HITL_Manual"
+        }
+   
+    def _auto_update_node(self, state: AgentState):
+        idx = state["current_index"]
+        l1 = state.get("l1_res")
+        l2 = state.get("l2_res")
+        l3_list = state.get("l3_res_list", [])
+        pred = state.get("temp_prediction", {})
+        
+        # --- A. 确定最终标签和判定路径 ---
+        if state.get("final_path") == "HITL_Manual":
+            final_label = pred.get("label")
+            path_taken = "HITL_Manual"
+        elif l2 == "SAFETY_BLOCKED": # <--- 【新增】识别安全拦截路径
+            final_label = l3_list[0] if l3_list else l1
+            path_taken = "L2_Safety_Bypass_to_L3"
+        elif l2 is not None and l1 == l2:
+            final_label = l2
+            path_taken = "L2_Heterogeneous_Match"
+        elif l3_list and len(l3_list) > 0:
+            if len(set(l3_list)) == 1:
+                final_label = l3_list[0]
+                path_taken = "L3_Expert_Consensus"
+            else:
+                final_label = l3_list[0]
+                path_taken = "L3_Expert_Inconsistent"
+        else:
+            final_label = l1 if l1 else None
+            path_taken = "L1_Initial_Exit"
+
+        # --- B. 计算观测指标 ---
+        # 1. 异构共识分 (0-3)
+        consensus_score = 0
+        if l2 == "SAFETY_BLOCKED":
+            consensus_score = -1 # <--- 【新增】用 -1 代表“由于安全策略导致的共识失效”
+        elif l1 == l2: consensus_score = 3
+        elif l3_list and len(set(l3_list)) == 1: consensus_score = 2
+        elif l3_list: consensus_score = 1
+        
+        
+        # 3. 整合 JSONL 对象 (全维度观察)
+        obs_log = {
+            "row_id": idx,
+            "final_label": final_label,
+            "path": path_taken,
+            "consensus": consensus_score, 
+            "is_safety_blocked": (l2 == "SAFETY_BLOCKED"),
+            "rag": {
+                "indices": state["rag_indices"],
+                "avg_dist": sum(state["rag_distances"])/len(state["rag_distances"]) if state["rag_distances"] else 0
+            },
+            "performance": {
+                "latency": time.time() - state["start_time"],
+                "cost_usd": state["token_usage"]["total_cost"], # 钱存在这里
+                "reason": pred.get("reason", ""),
+                "reason_len": len(pred.get("reason", ""))
+            }
+        }
+
+        # 实时写入 JSONL 
+        with open(self.outfiles_dir / "observability_logs.jsonl", "a", encoding='utf-8') as f:
+            f.write(json.dumps(obs_log, ensure_ascii=False) + "\n")
+
+        # --- B. 更新主结果账本 (CSV 专供 - 极简版) ---
         new_results = state["results"].copy()
         new_results[str(idx)] = {
-            "label": user_input,
-            "path": "HITL_Manual",
-            "cost": state["token_usage"]["total_cost"]
+            "label": final_label,
+            "path": path_taken  # 只存这两个，CSV 会非常干净
         }
-        
-        new_pending = state["pending_indices"][1:]
+
+
+        # --- D. 打印进度并清零状态 (关键！) ---
+        print(f"--- [Row {idx}] Finalized via {path_taken}. Progress: {len(new_results)} / {len(state['multimodal_data'])} ---")
 
         return {
-            "results": new_results, 
-            "pending_indices": new_pending,
-            "l1_results": [],
-            "l2_result": None,
-            "l3_results": [],
-            "temp_prediction": None
+            "results": new_results,
+            "pending_indices": state["pending_indices"][1:], # 移除当前行，移动物流
+            "current_index": None,
+            "l1_res": None,
+            "l2_res": None,
+            "l3_res_list": [],
+            "rag_distances": [],
+            "rag_labels": [],
+            "rag_indices": [],
+            "temp_prediction": None,
+            "final_path": ""
         }
     
-    # def _l1_router(self, state: AgentState):
-    #     l1 = state["l1_results"]
-    #     unique_count = len(set(l1))
-        
-    #     if unique_count == 1:
-    #         return "auto_update"   # 3/3 一致
-    #     if unique_count == 3:
-    #         return "go_to_l3"      # 1/1/1 全分歧
-    #     return "go_to_l2"
 
     def _l1_router(self, state: AgentState):
-        # L1 跑完直接去 L2，不要判断了
         return "go_to_l2" 
     
-    # def _l2_router(self, state: AgentState):
-    #     # 这里的 a_majority 是 Model A 跑三次中出现两次的那个标签
-    #     a_majority = Counter(state["l1_results"]).most_common(1)[0][0]
-    #     if state["l2_result"] == a_majority:
-    #         return "auto_update"   # B 赞同 A 的众数
-    #     return "go_to_l3"          # B 反对 A 的众数，升级到 L3
-    
     def _l2_router(self, state: AgentState):
-        # 在这里进行“异构对冲”
-        label_a = state["l1_results"][0]
-        label_b = state["l2_result"]
+        label_a = state.get("l1_res") 
+        label_b = state.get("l2_res")
         
         if label_a == label_b:
-            return "auto_update" # 异构达成共识，直接结束
-        return "go_to_l3"        # 异构吵架，升级到专家
+            return "auto_update" # 一致就结束
+        return "go_to_l3"        # 不一致就升级
     
     def _l3_router(self, state: AgentState):
-        l3 = state["l3_results"]
-        if len(set(l3)) == 1:      # Advanced 2/2 一致
-            return "auto_update"
-        return "human_label"   
+        l3 = state.get("l3_res_list", [])
+        if len(set(l3)) == 1 and len(l3) == 2:
+            return "auto_update" # 2/2 一致
+        return "human_label"     # 1/1 分歧  
     
     
-    def _build_graph(self):
+    def _build_graph(self,memory):
         builder = StateGraph(AgentState)
         
         # 1. 添加所有功能节点
@@ -726,43 +589,45 @@ class MultiModalClassifier:
         # 2. 设置起点
         builder.add_edge(START, "predict_l1")
         
-        # 3. 设置核心路由：L1 之后的路口
+        # 3. L1 到 L2 的路口 (因为你现在 L1 只跑1次，永远去 L2，其实这里可以简化)
         builder.add_conditional_edges("predict_l1", self._l1_router, {
-            "auto_update": "auto_update",
+            "auto_update": "auto_update", # 保留着为了以后扩展
             "go_to_l2": "predict_l2",
             "go_to_l3": "predict_l3"
         })
         
-        # 4. 设置 L2 之后的路口
+        # 4. L2 的路口
         builder.add_conditional_edges("predict_l2", self._l2_router, {
             "auto_update": "auto_update",
             "go_to_l3": "predict_l3"
         })
         
-        # 5. 设置 L3 之后的路口
+        # 5. L3 的路口
         builder.add_conditional_edges("predict_l3", self._l3_router, {
             "auto_update": "auto_update",
             "human_label": "human_label"
         })
 
-        # 6. 处理循环逻辑：处理完当前行，是否有下一行？
+        # ==========================================
+        # 6. 【核心修复】人工标注完，必须去财务室盖章记账！
+        # ==========================================
+        builder.add_edge("human_label", "auto_update")
+
+        # 7. 处理循环逻辑：只有在财务室（auto_update）结账后，才看有没有下一行
         def _check_next_step(state: AgentState):
             if state["pending_indices"]:
                 return "next"
             return "end"
 
+        # 所有的终点都汇聚在 auto_update，由它来决定是循环还是结束
         builder.add_conditional_edges("auto_update", _check_next_step, {
             "next": "predict_l1",
             "end": END
         })
-        builder.add_conditional_edges("human_label", _check_next_step, {
-            "next": "predict_l1",
-            "end": END
-        })
 
-        # 7. 编译并加装“暂停器” (用于 HITL)
+        # 8. 编译并加装“暂停器” (用于 HITL)
         return builder.compile(
-            checkpointer=MemorySaver(), 
+            checkpointer=memory, 
             interrupt_before=["human_label"]
         )
     
@@ -777,119 +642,141 @@ class MultiModalClassifier:
             testing: bool=False,
             testing_size: int=None,
         ):
-        # --- A. 初始化环境与路径 ---
+        # --- 0. 路径与持久化准备 ---
+        dataset_name = self.data_file.stem
+        self.output_file = self.outfiles_dir / f"{dataset_name}_agent_results.csv"
+        self.backup_file = self.outfiles_dir / f"{dataset_name}_backup_v3.csv"
+        db_path = self.outfiles_dir / "poliprompt_checkpoints.db"
+
+        # --- A. 初始化环境 ---
         self.llm_a_name = llm_a_name
         self.llm_b_name = llm_b_name
         self.llm_adv_name = llm_adv_name
-        
-        dataset_name = self.data_file.stem
         llm_configs = self.configs_dir / "llm_configs.json"
-        index_file = str(self.outfiles_dir / "embeddings.index")
-        self.faiss_index = faiss.read_index(index_file) # 存入 self 供 Node 调用
-        exemplars_file = self.outfiles_dir / "exemplar_indices.json"
-        self.indices = json.loads(exemplars_file.read_text())
+        self.faiss_index = faiss.read_index(str(self.outfiles_dir / "embeddings.index"))
+        self.indices = json.loads((self.outfiles_dir / "exemplar_indices.json").read_text())
         self.kshots = kshots
         self.lambda_param = lambda_param
 
-        # --- B. 初始化三个结构化模型 ---
+        # --- B. 初始化三个结构化模型 (带 Qwen 兼容逻辑) ---
+        # def _init_structured_llm(name):
+        #     config = load_config(llm_configs, name)
+        #     model = create_llm(llm_name=name, model_config=config)
+        #     # 自动适配 Qwen 或 OpenAI
+        #     method = None if "qwen" in name.lower() else "function_calling"
+            
+        #     structured = model.with_structured_output(
+        #         ClassificationResult, 
+        #         method=method, 
+        #         include_raw=True
+        #     )
+        #     return structured.with_retry(stop_after_attempt=3)
         def _init_structured_llm(name):
             config = load_config(llm_configs, name)
             model = create_llm(llm_name=name, model_config=config)
-            return model.with_structured_output(
+            
+            # 准备参数字典
+            structured_kwargs = {"include_raw": True}
+            
+            # 如果不是 Qwen，我们才显式指定使用 function_calling
+            # 如果是 Qwen，就不传 method 键，让 LangChain 自动选择最兼容的模式
+            if "qwen" not in name.lower():
+                structured_kwargs["method"] = "function_calling"
+            
+            # 使用 ** 将字典解构为参数
+            structured = model.with_structured_output(
                 ClassificationResult, 
-                method="function_calling", 
-                include_raw=True
+                **structured_kwargs
             )
+            return structured.with_retry(stop_after_attempt=3)
         
         self.structured_llm_a = _init_structured_llm(llm_a_name)
         self.structured_llm_b = _init_structured_llm(llm_b_name)
         self.structured_llm_adv = _init_structured_llm(llm_adv_name)
 
-        # --- C. 数据准备 ---
+        # --- C. 数据准备 (核心重构：图书馆模式) ---
+        # 1. 永远加载全量数据，确保 RAG 能搜到所有的精英
         self.df = load_and_validate_data(self.data_file, self.feature_col, self.answer_col, self.image_col)
         multimodal_data = read_multimodal_docs_from_dataframe(self.df, self.feature_col, self.image_col, self.image_dir)
         
-        if testing:
-            testing_size = min(testing_size, len(self.df)) if testing_size else len(self.df)
-            # 1. 这里的 df 被切短了
-            self.df = self.df[:testing_size].reset_index(drop=True) 
-            multimodal_data = multimodal_data[:testing_size]
+        # 2. 确定我们要处理哪些行 (Task Queue)
+        all_indices = self.df.index.tolist()
+        if testing and testing_size:
+            # 只切待办列表，不切 df 本身！
+            pending = all_indices[:testing_size]
+        else:
+            pending = all_indices
             
-            # 2. 必须过滤 self.indices，确保里面的索引都在 testing_size 范围内
-            # 否则 select_kshots 会去访问不存在的行
-            self.indices = [idx for idx in self.indices if idx < testing_size]
-            print(f"DEBUG: Testing mode active. Exemplar pool filtered to {len(self.indices)} items.")
-            
-            # 3. 还有一个隐患：如果过滤完之后池子空了，kshots 要设为 0
-            if not self.indices:
-                self.kshots = 0
-                print("WARNING: No exemplars found within testing_size. Switching to zero-shot.")
+        print(f"--- 🚀 Agentic System Ready ---")
+        print(f"Library Size: {len(self.df)} | Task Queue: {len(pending)}")
 
-        # 读取基础 Prompt (Seed Prompt)
         self.current_prefix = get_prompt(prompt_file=self.prompts_dir / prompt_file_name)
 
-        # --- D. 构建与执行 Graph ---
-        all_indices = self.df.index.tolist()
-        initial_state = {
-            "pending_indices": all_indices,
-            "current_index": None,
-            "results": {}, # 结果将是一个字典：{idx: {"label":..., "path":..., "cost":...}}
-            "multimodal_data": multimodal_data,
-            "l1_results": [], "l2_result": None, "l3_results": [],
-            "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0},
-            "temp_prediction": None,
-            "final_path": ""
-        }
+        # --- D. 构建与执行 Graph (SqliteSaver) ---
+        import sqlite3
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        memory = SqliteSaver(conn)
 
         if not hasattr(self, "agent_app"):
-            self.agent_app = self._build_graph()
+            self.agent_app = self._build_graph(memory)
 
+        # 这里的 thread_id 建议包含 lambda 信息，方便你做 A/B Test
         config = {
-            "configurable": {"thread_id": f"job_{dataset_name}"},
-            "recursion_limit": 3000 # 增加这一行，设为 3000 确保能跑完 512 个样本
+            "configurable": {"thread_id": f"job_{dataset_name}_L{str(lambda_param).replace('.','')}"},
+            "recursion_limit": 3000
         }
         
-        # 检查是否有 Checkpoint 可以恢复
+        initial_state = {
+            "pending_indices": pending, # 使用刚才切好的待办单
+            "current_index": None,
+            "multimodal_data": multimodal_data, # 传入全量数据供检索
+            "results": {}, 
+            "l1_res": None, "l2_res": None, "l3_res_list": [],
+            "rag_distances": [], "rag_labels":[], "rag_indices":[],
+            "start_time": 0.0,
+            "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0},
+            "temp_prediction": None, "final_path": ""
+        }
+
         current_state = self.agent_app.get_state(config)
         input_data = initial_state if not current_state.values else None
 
-        print(f"--- Starting Agentic Annotation (Total: {len(all_indices)}) ---")
-        
+        # --- 执行循环 ---
         try:
             count = 0
             for event in self.agent_app.stream(input_data, config):
-                if "auto_update" in event or "human_label" in event:
+                if "auto_update" in event:
                     count += 1
-                    # 每 10 个样本强制写一次文件，保命！
+                    # 每 10 个样本自动同步一次 CSV 供肉眼查看
                     if count % 10 == 0:
-                        snapshot = self.agent_app.get_state(config)
-                        current_results = snapshot.values.get("results", {})
-                        temp_df = self.df.copy()
-                        for s_idx, res in current_results.items():
-                            temp_df.at[int(s_idx), "predicted_label"] = res["label"]
-                            temp_df.at[int(s_idx), "inference_path"] = res["path"]
-                        temp_df.to_csv("../examples/TopicExperiment/outfiles/backup_v3.csv", index=False)
-                        print(f"--- [Auto-Save] Progress synced at {count} rows ---")
+                        snap = self.agent_app.get_state(config)
+                        res_dict = snap.values.get("results", {})
+                        temp_df = self.df.loc[pending].copy() # 只导出待办部分的
+                        for s_idx, res in res_dict.items():
+                            i = int(s_idx)
+                            temp_df.at[i, "predicted_label"] = res["label"]
+                            temp_df.at[i, "inference_path"] = res["path"]
+                        temp_df.to_csv(self.backup_file)
 
                 if "__interrupt__" in event:
                     print(f"\n[PAUSED] Row {self.agent_app.get_state(config).values.get('current_index')} needs HITL.")
                     return 
 
-            # --- E. 结果导出与评估准备 ---
+            # --- E. 结果最终收割 ---
             final_snapshot = self.agent_app.get_state(config)
             final_results_dict = final_snapshot.values.get("results", {})
             
-            # 整理结果存入 CSV
-            output_df = self.df.copy()
+            output_df = self.df.loc[pending].copy() 
             for str_idx, res in final_results_dict.items():
                 idx = int(str_idx)
-                output_df.at[idx, "predicted_label"] = res["label"]
-                output_df.at[idx, "inference_path"] = res["path"]
-                output_df.at[idx, "acc_cost_usd"] = res["cost"]
+                if idx in output_df.index:
+                    # 只填入 CSV 需要的字段
+                    output_df.at[idx, "predicted_label"] = res["label"]
+                    output_df.at[idx, "inference_path"] = res["path"]
             
-            # output_file = self.outfiles_dir / f"{dataset_name}_agent_results.csv"
-            output_df.to_csv("../examples/TopicExperiment/outfiles/final_v3_results.csv", index=False)
-            print(f"--- Mission Accomplished! Results saved to {self.outfiles_dir / 'final_v3_results.csv'} ---")
-            
+            output_df.to_csv(self.output_file, index=False)
+            print(f"--- ✅ Mission Accomplished! Results saved to {self.output_file} ---")
+
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error during execution: {e}")

@@ -55,5 +55,9 @@
     "claude-3-5-sonnet-20240620": {
         "max_tokens": 1000,
         "temperature": 0.0
+    },
+    "qwen-vl-max": {
+        "max_tokens": 1000,
+        "temperature": 0.0
     }
 }

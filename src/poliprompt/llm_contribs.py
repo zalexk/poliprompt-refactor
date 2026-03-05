@@ -17,6 +17,23 @@ from dashscope import MultiModalEmbedding
 import base64
 from langchain_core.messages import HumanMessage, SystemMessage
 
+def create_llm(llm_name, model_config: Dict) -> BaseChatModel:
+    # 逻辑：如果是 qwen 模型，使用通义千问的兼容端点；否则使用中转站端点
+    if "qwen" in llm_name.lower():
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+    else:
+        base_url = "https://api2.aigcbest.top/v1"
+        api_key = os.getenv("OPENAI_API_KEY")
+        
+    return ChatOpenAI(
+        model_name=llm_name, 
+        max_tokens=model_config["max_tokens"], 
+        temperature=model_config["temperature"],
+        base_url=base_url,
+        openai_api_key=api_key
+    )
+
 # import logging
 # logger = logging.getLogger(__name__)
 
@@ -50,15 +67,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 #     else:
 #         raise ValueError(f"The specified model {llm_name} is not supported.")
 
-def create_llm(llm_name, model_config: Dict) -> BaseChatModel:
-    # 强制所有模型（包括 Gemini）都走 OpenAI 兼容协议
-    return ChatOpenAI(
-        model_name=llm_name, 
-        max_tokens=model_config["max_tokens"], 
-        temperature=model_config["temperature"],
-        base_url="https://api2.aigcbest.top/v1", # 确保这里只有 /v1
-        openai_api_key=os.getenv("OPENAI_API_KEY")
-    )
+# def create_llm(llm_name, model_config: Dict) -> BaseChatModel:
+#     # 强制所有模型（包括 Gemini）都走 OpenAI 兼容协议
+#     return ChatOpenAI(
+#         model_name=llm_name, 
+#         max_tokens=model_config["max_tokens"], 
+#         temperature=model_config["temperature"],
+#         base_url="https://api2.aigcbest.top/v1", # 确保这里只有 /v1
+#         openai_api_key=os.getenv("OPENAI_API_KEY")
+#     )
 
 
 def call_llm_wrapper(calls, period):
@@ -127,30 +144,60 @@ def get_openai_embeddings(docs, batch_size, model="text-embedding-3-small"):
     return np.array(embeddings)
     # 转换为Numpy数组
 
-def get_qwen_embeddings(docs, batch_size, model="qwen3-vl-embedding"):
-    """
+# def get_qwen_embeddings(docs, batch_size, model="qwen3-vl-embedding"):
+#     """
 
-    """
+#     """
+#     dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
+#     all_embeddings = []
+#     for item in docs:
+#         input_data = [
+#             {
+#                 "text" : item['text'],
+#                 "image" : item['image_path']
+#             }
+#         ]
+#         resp = MultiModalEmbedding.call(
+#             model = model,
+#             input = input_data, # type: ignore
+#             parameters={"dimension":1024}
+#         )
+#         if resp.status_code == 200:
+#             all_embeddings.append(resp.output['embeddings'][0]['embedding'])
+#         else:
+#             print(f"Error calling DashScope:{resp.message}")
+#     return np.array(all_embeddings)
+
+def get_qwen_embeddings(docs, batch_size, model="qwen3-vl-embedding"):
     dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
     all_embeddings = []
-    for item in docs:
+    
+    # --- 核心改进：引入 batch 循环 ---
+    for i in range(0, len(docs), batch_size):
+        batch_docs = docs[i : i + batch_size]
+        
+        # 组装当前 batch 的输入
         input_data = [
-            {
-                "text" : item['text'],
-                "image" : item['image_path']
-            }
+            {"text": item['text'], "image": item['image_path']}
+            for item in batch_docs
         ]
-        resp = MultiModalEmbedding.call(
-            model = model,
-            input = input_data, # type: ignore
-            parameters={"dimension":1024}
-        )
-        if resp.status_code == 200:
-            all_embeddings.append(resp.output['embeddings'][0]['embedding'])
-        else:
-            print(f"Error calling DashScope:{resp.message}")
+        
+        try:
+            resp = MultiModalEmbedding.call(
+                model=model,
+                input=input_data,
+                parameters={"dimension": 1024}
+            )
+            if resp.status_code == 200:
+                # 提取这个 batch 的所有向量
+                batch_ebs = [eb['embedding'] for eb in resp.output['embeddings']]
+                all_embeddings.extend(batch_ebs)
+            else:
+                print(f"Error calling DashScope at batch {i}: {resp.message}")
+        except Exception as e:
+            print(f"Exception at batch {i}: {e}")
+            
     return np.array(all_embeddings)
-
 
 def _prepare_multimodal_message(system_prompt,text_content,image_path):
     with open(image_path, "rb") as image_file:

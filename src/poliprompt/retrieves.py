@@ -1,8 +1,9 @@
 from scipy.spatial.distance import cdist
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import pandas as pd
 import numpy as np
 import faiss
+
 
 def maximal_marginal_relevance(
     query_embedding, pool_embeddings, selected_indices, k, lambda_param=1.0, metric="euclidean"
@@ -37,7 +38,8 @@ def maximal_marginal_relevance(
             # Calculate diversity for each unselected item
             diversity_scores = np.min(cdist(pool_embeddings[selected_indices], pool_embeddings, metric=metric), axis=0)
             # Combine relevance and diversity to score items
-            mmr_scores = lambda_param * relevance_scores - (1 - lambda_param) * diversity_scores
+            mmr_scores = lambda_param * (-relevance_scores) + (1 - lambda_param) * diversity_scores
+            # mmr_scores = lambda_param * relevance_scores - (1 - lambda_param) * diversity_scores
             # Select the item with the highest MMR score
             selected_idx = int(np.argmax(mmr_scores))
 
@@ -45,9 +47,11 @@ def maximal_marginal_relevance(
         selected_indices.append(selected_idx)
 
         # Mark the selected item as used by setting its score to -infinity
-        relevance_scores[selected_idx] = -np.inf
+        relevance_scores[selected_idx] = np.inf
+        # relevance_scores[selected_idx] = -np.inf
 
     return selected_indices
+
 
 
 def get_k_nearest_distinct_classes(query_embedding, pool_embeddings, pool_labels, kshots, options, metric="euclidean"):
@@ -94,6 +98,7 @@ def get_k_nearest_distinct_classes(query_embedding, pool_embeddings, pool_labels
 def select_kshots(
     ds: pd.DataFrame,
     feature_col: str,
+    image_col: str,
     answer_col: str,
     kshots: int,
     idx: int,
@@ -101,22 +106,10 @@ def select_kshots(
     index: faiss.Index,
     lambda_param: float = 1.0,
     options=None,
-) -> List[Dict[str, str]]:
+) ->  Tuple[List[Dict[str, str]], List[float], List[str], List[int]]:
     """
-    Select k-shots examples using Maximal Marginal Relevance (MMR) based on Euclidean distance.
-
-    Parameters:
-        - ds: datasets.Dataset - The dataset object containing the data.
-        - feature_col: str - The column name for the features.
-        - answer_col: str - The column name for the answers.
-        - kshots: int - The number of shots to select.
-        - idx: int - The index of the query example in the dataset.
-        - indices: List[int] - The list of indices from which to select the examples.
-        - embeddings: np.ndarray - The numpy array containing embeddings of all examples.
-        - lambda_param (float): The trade-off parameter between relevance and diversity (0 <= lambda_param <= 1).
-
-    Returns:
-        - List[Dict[str, str]]: A list of dictionaries with 'Text' and 'Answer' for the selected k-shots.
+    
+    
     """
     # Extract the embedding for the query example
     # index.reconstruct(idx)让faiss根据编号，去它内部压缩、优化过的数据库里，把原始向量重新“组装”拿出来
@@ -129,8 +122,8 @@ def select_kshots(
     if pool_embeddings.ndim == 1:
         pool_embeddings = pool_embeddings.reshape(1, -1)
     
-    print(f"DEBUG: query_embedding 形状: {query_embedding.shape}")
-    print(f"DEBUG: pool_embeddings 形状: {pool_embeddings.shape}")
+    print(f"DEBUG: query_embedding shape: {query_embedding.shape}")
+    print(f"DEBUG: pool_embeddings shape: {pool_embeddings.shape}")
 
     pool_labels = ds.iloc[indices][answer_col].tolist()
 
@@ -145,15 +138,32 @@ def select_kshots(
     selected_indices = maximal_marginal_relevance(
         query_embedding, pool_embeddings, selected_indices, kshots - len(selected_indices), lambda_param=lambda_param
     )
-
-    # Get the actual indices from the 'indices' list
+    
+       # 4. 【核心采集】提取这几个被选中样本的所有信息，包括图片路径！
     kshots_indices = [indices[i] for i in selected_indices]
-
-    # Extract features and answers for the selected indices
+    
+    kshot_distances = []
+    rag_labels = []
     selected_data = []
-    for idx in kshots_indices:
-        feature = ds.loc[idx, feature_col]
-        answer = ds.loc[idx, answer_col]
-        selected_data.append({"content": feature, "answer": answer})
 
-    return selected_data
+    for i_in_pool, real_idx in zip(selected_indices, kshots_indices):
+        # 记录距离
+        dist = np.linalg.norm(query_embedding - pool_embeddings[i_in_pool])
+        kshot_distances.append(float(dist))
+        
+        # 记录标签
+        label = ds.loc[real_idx, answer_col]
+        rag_labels.append(str(label))
+        
+        # --- 【关键修正点】 ---
+        # 以前只拿了 text，现在我们要把 text 和 image 路径都打包
+        feature_text = ds.loc[real_idx, feature_col]
+        image_path = ds.loc[real_idx, image_col] # <--- 拿到图片路径
+        
+        selected_data.append({
+            "content": feature_text, 
+            "image_path": image_path, # <--- 存入字典，给 Prompt 喂图
+            "answer": label
+        })
+
+    return selected_data, kshot_distances, rag_labels, kshots_indices
