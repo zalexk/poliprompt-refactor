@@ -222,32 +222,36 @@ class MultiModalClassifier:
         # PHASE 1: [MAP] - Individual Rule Extraction
         # ==========================================================
         if not os.path.isfile(rules_path):
-            qa_sys_prompt = """You are a political scientist. Extract a specific classification rule 
-            from this exemplar. Logic should start with 'The correct option is [LABEL]'."""
-            
-            extracted_rules = []
-            print("--- PHASE 1 (MAP): Extracting Expert Logic from Exemplars ---")
-            for ctx, ans in tqdm(zip(exemplar_contexts, exemplar_answers), total=len(indices), desc="Mapping"):
+            extracted_rules_dict = {}
+            for idx, ctx, ans in tqdm(zip(indices, exemplar_contexts, exemplar_answers), total=len(indices), desc="Mapping"):
                 msg_text = f"Text: {ctx['text']}\nHuman Answer: {ans}"
-                messages = _prepare_multimodal_message(qa_sys_prompt.format(task=seed_prompt), msg_text, ctx['image_path'])
+                messages = _prepare_multimodal_message(seed_prompt, msg_text, ctx['image_path'])
                 response = model.invoke(messages)
-                extracted_rules.append(response.content)
-            rules_path.write_text(json.dumps(extracted_rules, indent=4))
+                extracted_rules_dict[str(idx)] = response.content
+
+            # 保存为 JSON
+            rules_path.write_text(json.dumps(extracted_rules_dict, indent=4))
+            rule_list = list(extracted_rules_dict.values())
         else:
             extracted_rules = json.loads(rules_path.read_text())
+            if isinstance(extracted_rules, dict):
+                rule_list = list(extracted_rules.values())
+            else:
+                rule_list = extracted_rules
 
         # ==========================================================
         # PHASE 2: [REDUCE] - Rule Synthesis (via LCEL)
         # ==========================================================
-        reduce_instruction = """You are a senior political research analyst. 
-        We have extracted several specific classification rules from human-labeled exemplars.
         
+        reduce_instruction = """You are an expert in content moderation. 
+        We have extracted several specific classification rules from human-labeled exemplars.
+
         Task Context: {task}
         Extracted Individual Rules:
         {rules}
-        
-        Please synthesize these into a final, consolidated summary of actionable rules.
-        Identify consensus, resolve contradictions, and provide a clear decision logic.
+
+        The classification options are: {options_str}. Please synthesize these into a final, consolidated summary of actionable rules that **clearly distinguishes between these options**. For each option, list key characteristics, typical patterns, and any subcategories. Ensure the summary is balanced and provides guidance for all options.
+
         CONCISE SUMMARY RULES:"""
         
         reduce_prompt = PromptTemplate.from_template(reduce_instruction)
@@ -256,9 +260,12 @@ class MultiModalClassifier:
         reduce_chain = reduce_prompt | model | StrOutputParser()
 
         print("--- PHASE 2 (REDUCE): Synthesizing Global Knowledge ---")
+
+        options_str = ", ".join([f"'{opt}'" for opt in self.options])  # 或者直接 ", ".join(self.options)
         consolidated_rules = reduce_chain.invoke({
             "task": seed_prompt,
-            "rules": "\n\n".join(extracted_rules)
+            "rules": "\n\n".join(rule_list),
+            "options_str": options_str
         })
 
         # 更新实例属性并持久化，方便后续 Agent 节点调用
@@ -273,7 +280,8 @@ class MultiModalClassifier:
         # 1. 卸货：接住四元组
         examples, dists, labels, r_indices = select_kshots(
             self.df, self.feature_col, self.image_col, self.answer_col, 
-            self.kshots, idx, self.indices, self.faiss_index, self.lambda_param, self.options
+            self.kshots, idx, self.indices, self.faiss_index, self.lambda_param, self.options,
+            rules_dict=self.rules_dict
         )
         
         # 2. 构建 System Content
@@ -289,9 +297,9 @@ class MultiModalClassifier:
         from .utils import encode_image
         for i, ex in enumerate(examples):
             user_payload.append({
-                "type": "text", 
-                "text": f"Example {i+1}:\nText: {ex['content']}\nAnswer: {ex['answer']}"
-            })
+            "type": "text",
+            "text": f"Example {i+1}:\nText: {ex['content']}\nAnswer: {ex['answer']}\nExplanation: {ex['explanation']}"
+        })
             
             # 处理示例路径（确保路径完整）
             # 如果路径里没包含 image_dir，我们才补。
@@ -327,7 +335,7 @@ class MultiModalClassifier:
         # 返回：消息 + 观测数据
         return messages, dists, labels, r_indices
     
-   
+
     def _l1_node(self, state: AgentState):
         idx = state["pending_indices"][0] 
         item = state["multimodal_data"][idx]
@@ -340,102 +348,126 @@ class MultiModalClassifier:
         
         print(f"--- [Row {idx}] Layer 1 (Model A) Analyzing ---")
         
-        # 3. 调用模型 (带 include_raw=True)
-        raw_res = self.structured_llm_a.invoke(messages)
-        parsed = raw_res["parsed"]
-        raw_msg = raw_res["raw"]
+        # # 3. 调用模型 (带 include_raw=True)
+        # raw_res = self.structured_llm_a.invoke(messages)
+        # parsed = raw_res["parsed"]
+        # raw_msg = raw_res["raw"]
+
+        response = self.llm_a.invoke(messages)   # 注意：这是普通 LLM，需要在 annotate 中初始化
+        raw_content = response.content
         
+        parsed = parse_llm_response_generic(raw_content, options=self.options)
+        label = parsed["label"]
+        reason = parsed["reason"]
+
+        if label not in self.options:
+            print(f"⚠️ [Row {idx}] Layer 1 label '{label}' not in options, setting to None. Raw: {raw_content[:200]}...")
+            label = None
+            
         # 4. 更新 Token 和 成本
         new_usage = state["token_usage"].copy()
-        if hasattr(raw_msg, "usage_metadata"):
-            usage = raw_msg.usage_metadata
+        if hasattr(response, "usage_metadata"):
+            usage = response.usage_metadata
             new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
             new_usage["completion_tokens"] += usage.get("output_tokens", 0)
             new_usage["total_cost"] += calculate_token_cost(self.llm_a_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-
-        # 5. 返回所有观测指标
+        
         return {
             "current_index": idx,
             "start_time": row_start_time,
-            "l1_res": parsed.label,
-            "temp_prediction": parsed.dict(), # 包含 reason，供后期字数分析
+            "l1_res": label,
+            "temp_prediction": {"label": label, "reason": reason},
             "rag_distances": dists,
             "rag_labels": labels,
             "rag_indices": r_indices,
             "token_usage": new_usage
         }
-
     # --- Layer 2: Secondary Model B (1 Inference) ---
     def _l2_node(self, state: AgentState):
         idx = state["current_index"]
         item = state["multimodal_data"][idx]
-        
-        # 同样获取消息，但我们只取 messages 即可，dists 等已经在 L1 存过了
+
         messages, _, _, _ = self._prepare_agent_messages(idx, item, include_image=True, is_cot=False)
-        
         print(f"--- [Row {idx}] Layer 2 (Model B) Cross-checking ---")
+
         try:
-            raw_res = self.structured_llm_b.invoke(messages)
-            parsed = raw_res["parsed"]
-            raw_msg = raw_res["raw"]
+            response = self.llm_b.invoke(messages)
+            raw_content = response.content
+
+            parsed = parse_llm_response_generic(raw_content, options=self.options)
+            label = parsed["label"]
+            reason = parsed["reason"]
+
+            if label not in self.options:
+                print(f"⚠️ [Row {idx}] Layer 2 label '{label}' not in options, setting to None")
+                label = None
 
             new_usage = state["token_usage"].copy()
-            if hasattr(raw_msg, "usage_metadata"):
-                usage = raw_msg.usage_metadata
+            if hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
                 new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
                 new_usage["completion_tokens"] += usage.get("output_tokens", 0)
                 new_usage["total_cost"] += calculate_token_cost(self.llm_b_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
 
             return {
-                "l2_res": parsed.label,
-                "temp_prediction": parsed.dict(),
+                "l2_res": label,
+                "temp_prediction": {"label": label, "reason": reason},
                 "token_usage": new_usage
             }
-        
+
         except Exception as e:
-            # 4. 【核心改进】如果报错（比如安全审查 400），捕获它！
             print(f"⚠️ [Row {idx}] Layer 2 FAILED/BLOCKED. Error: {e}")
             print(f"--- [Row {idx}] Escalating to L3 due to Model B failure. ---")
-            
-            # 我们返回一个特殊的标志
-            # 逻辑：因为 L1 的结果通常是 "0" 或 "1"，所以这个字符串肯定不相等
-            # 路由器 _l2_router 看到不相等，就会自动送它去 L3
             return {
-                "l2_res": "MODEL_B_FAIL_OR_BLOCKED", 
-                "final_path": "L2_Safety_Bypass" # 记一笔，方便后期分析
+                "l2_res": "L2_FAILED",
+                "final_path": "L2_Safety_Bypass"
             }
     
     # --- Layer 3: Advanced Model (2 Inferences with CoT) ---
     def _l3_node(self, state: AgentState):
         idx = state["current_index"]
         item = state["multimodal_data"][idx]
-        
-        # 专家层开启 is_cot=True
+
         messages, _, _, _ = self._prepare_agent_messages(idx, item, include_image=True, is_cot=True)
-        
         l3_results = []
         new_usage = state["token_usage"].copy()
-        last_parsed = None
-        
+        last_label = None
+        last_reason = ""
+
         print(f"--- [Row {idx}] Layer 3 (Advanced Model) Resolving (2 times CoT) ---")
-        
+
         for i in range(2):
-            raw_res = self.structured_llm_adv.invoke(messages)
-            last_parsed = raw_res["parsed"]
-            l3_results.append(last_parsed.label)
-            
-            raw_msg = raw_res["raw"]
-            if hasattr(raw_msg, "usage_metadata"):
-                usage = raw_msg.usage_metadata
-                new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
-                new_usage["completion_tokens"] += usage.get("output_tokens", 0)
-                new_usage["total_cost"] += calculate_token_cost(self.llm_adv_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+            try:
+                response = self.llm_adv.invoke(messages)
+                raw_content = response.content
+
+                parsed = parse_llm_response_generic(raw_content, options=self.options)
+                label = parsed["label"]
+                reason = parsed["reason"]
+
+                if label not in self.options:
+                    print(f"⚠️ [Row {idx}] Layer 3 inference {i+1} label '{label}' not in options, using None")
+                    label = None
+
+                l3_results.append(label)
+                last_label = label
+                last_reason = reason
+
+                if hasattr(response, "usage_metadata"):
+                    usage = response.usage_metadata
+                    new_usage["prompt_tokens"] += usage.get("input_tokens", 0)
+                    new_usage["completion_tokens"] += usage.get("output_tokens", 0)
+                    new_usage["total_cost"] += calculate_token_cost(self.llm_adv_name, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+            except Exception as e:
+                print(f"⚠️ [Row {idx}] Layer 3 inference {i+1} failed: {e}")
+                l3_results.append(None)   # 标记失败
 
         return {
             "l3_res_list": l3_results,
-            "temp_prediction": last_parsed.dict() if last_parsed else None,
+            "temp_prediction": {"label": last_label, "reason": last_reason} if last_label is not None else None,
             "token_usage": new_usage
         }
+
     
     def _human_label_node(self, state: AgentState):
         idx = state["current_index"]
@@ -476,76 +508,79 @@ class MultiModalClassifier:
         l1 = state.get("l1_res")
         l2 = state.get("l2_res")
         l3_list = state.get("l3_res_list", [])
-        pred = state.get("temp_prediction", {})
+        pred = state.get("temp_prediction")
+        
+        # 处理 pred 为 None 的情况
+        if pred is None:
+            pred = {"label": None, "reason": ""}
         
         # --- A. 确定最终标签和判定路径 ---
         if state.get("final_path") == "HITL_Manual":
             final_label = pred.get("label")
             path_taken = "HITL_Manual"
-        elif l2 == "SAFETY_BLOCKED": # <--- 【新增】识别安全拦截路径
+        elif l2 == "L2_FAILED":
             final_label = l3_list[0] if l3_list else l1
             path_taken = "L2_Safety_Bypass_to_L3"
-        elif l2 is not None and l1 == l2:
+        elif l2 is not None and l1 is not None and l1 == l2:
             final_label = l2
             path_taken = "L2_Heterogeneous_Match"
         elif l3_list and len(l3_list) > 0:
-            if len(set(l3_list)) == 1:
-                final_label = l3_list[0]
+            # 过滤掉 None 值
+            valid_l3 = [x for x in l3_list if x is not None]
+            if len(set(valid_l3)) == 1:
+                final_label = valid_l3[0]
                 path_taken = "L3_Expert_Consensus"
             else:
-                final_label = l3_list[0]
+                final_label = valid_l3[0] if valid_l3 else None
                 path_taken = "L3_Expert_Inconsistent"
         else:
             final_label = l1 if l1 else None
             path_taken = "L1_Initial_Exit"
 
         # --- B. 计算观测指标 ---
-        # 1. 异构共识分 (0-3)
         consensus_score = 0
-        if l2 == "SAFETY_BLOCKED":
-            consensus_score = -1 # <--- 【新增】用 -1 代表“由于安全策略导致的共识失效”
-        elif l1 == l2: consensus_score = 3
-        elif l3_list and len(set(l3_list)) == 1: consensus_score = 2
-        elif l3_list: consensus_score = 1
-        
-        
-        # 3. 整合 JSONL 对象 (全维度观察)
+        if l2 == "L2_FAILED":
+            consensus_score = -1
+        elif l1 is not None and l2 is not None and l1 == l2:
+            consensus_score = 3
+        elif l3_list and len([x for x in l3_list if x is not None]) > 0:
+            if len(set([x for x in l3_list if x is not None])) == 1:
+                consensus_score = 2
+            else:
+                consensus_score = 1
+
         obs_log = {
             "row_id": idx,
             "final_label": final_label,
             "path": path_taken,
-            "consensus": consensus_score, 
-            "is_safety_blocked": (l2 == "SAFETY_BLOCKED"),
+            "consensus": consensus_score,
+            "is_safety_blocked": (l2 == "L2_FAILED"),
             "rag": {
                 "indices": state["rag_indices"],
-                "avg_dist": sum(state["rag_distances"])/len(state["rag_distances"]) if state["rag_distances"] else 0
+                "avg_dist": sum(state["rag_distances"]) / len(state["rag_distances"]) if state["rag_distances"] else 0
             },
             "performance": {
                 "latency": time.time() - state["start_time"],
-                "cost_usd": state["token_usage"]["total_cost"], # 钱存在这里
+                "cost_usd": state["token_usage"]["total_cost"],
                 "reason": pred.get("reason", ""),
                 "reason_len": len(pred.get("reason", ""))
             }
         }
 
-        # 实时写入 JSONL 
         with open(self.outfiles_dir / "observability_logs.jsonl", "a", encoding='utf-8') as f:
             f.write(json.dumps(obs_log, ensure_ascii=False) + "\n")
 
-        # --- B. 更新主结果账本 (CSV 专供 - 极简版) ---
         new_results = state["results"].copy()
         new_results[str(idx)] = {
             "label": final_label,
-            "path": path_taken  # 只存这两个，CSV 会非常干净
+            "path": path_taken
         }
 
-
-        # --- D. 打印进度并清零状态 (关键！) ---
         print(f"--- [Row {idx}] Finalized via {path_taken}. Progress: {len(new_results)} / {len(state['multimodal_data'])} ---")
 
         return {
             "results": new_results,
-            "pending_indices": state["pending_indices"][1:], # 移除当前行，移动物流
+            "pending_indices": state["pending_indices"][1:],
             "current_index": None,
             "l1_res": None,
             "l2_res": None,
@@ -556,25 +591,30 @@ class MultiModalClassifier:
             "temp_prediction": None,
             "final_path": ""
         }
-    
+        
 
     def _l1_router(self, state: AgentState):
         return "go_to_l2" 
     
+    
     def _l2_router(self, state: AgentState):
         label_a = state.get("l1_res") 
         label_b = state.get("l2_res")
-        
+        if label_a is None or label_b is None:
+            return "go_to_l3"   # 解析失败，直接送 L3
         if label_a == label_b:
-            return "auto_update" # 一致就结束
-        return "go_to_l3"        # 不一致就升级
+            return "auto_update"
+        return "go_to_l3"
     
     def _l3_router(self, state: AgentState):
         l3 = state.get("l3_res_list", [])
-        if len(set(l3)) == 1 and len(l3) == 2:
-            return "auto_update" # 2/2 一致
-        return "human_label"     # 1/1 分歧  
-    
+
+        # 如果任何一次推理失败（None）或者两次推理不一致，则送入人工
+        if len(l3) < 2 or None in l3:
+            return "human_label"
+        if len(set(l3)) == 1:
+            return "auto_update"        # 两次一致
+        return "human_label"  
     
     def _build_graph(self,memory):
         builder = StateGraph(AgentState)
@@ -642,6 +682,7 @@ class MultiModalClassifier:
             testing: bool=False,
             testing_size: int=None,
         ):
+        experiment_version = "v2_enhanced_prompt_3k"   # 每次实验改这里
         # --- 0. 路径与持久化准备 ---
         dataset_name = self.data_file.stem
         self.output_file = self.outfiles_dir / f"{dataset_name}_agent_results.csv"
@@ -657,42 +698,21 @@ class MultiModalClassifier:
         self.indices = json.loads((self.outfiles_dir / "exemplar_indices.json").read_text())
         self.kshots = kshots
         self.lambda_param = lambda_param
+        rules_path = self.outfiles_dir / "rules.json"
+        if rules_path.exists():
+            with open(rules_path, 'r') as f:
+                self.rules_dict = json.load(f)
+        else:
+            self.rules_dict = {}
 
-        # --- B. 初始化三个结构化模型 (带 Qwen 兼容逻辑) ---
-        # def _init_structured_llm(name):
-        #     config = load_config(llm_configs, name)
-        #     model = create_llm(llm_name=name, model_config=config)
-        #     # 自动适配 Qwen 或 OpenAI
-        #     method = None if "qwen" in name.lower() else "function_calling"
-            
-        #     structured = model.with_structured_output(
-        #         ClassificationResult, 
-        #         method=method, 
-        #         include_raw=True
-        #     )
-        #     return structured.with_retry(stop_after_attempt=3)
-        def _init_structured_llm(name):
-            config = load_config(llm_configs, name)
-            model = create_llm(llm_name=name, model_config=config)
-            
-            # 准备参数字典
-            structured_kwargs = {"include_raw": True}
-            
-            # 如果不是 Qwen，我们才显式指定使用 function_calling
-            # 如果是 Qwen，就不传 method 键，让 LangChain 自动选择最兼容的模式
-            if "qwen" not in name.lower():
-                structured_kwargs["method"] = "function_calling"
-            
-            # 使用 ** 将字典解构为参数
-            structured = model.with_structured_output(
-                ClassificationResult, 
-                **structured_kwargs
-            )
-            return structured.with_retry(stop_after_attempt=3)
         
-        self.structured_llm_a = _init_structured_llm(llm_a_name)
-        self.structured_llm_b = _init_structured_llm(llm_b_name)
-        self.structured_llm_adv = _init_structured_llm(llm_adv_name)
+        def _init_llm(name):
+            config = load_config(llm_configs, name)
+            return create_llm(llm_name=name, model_config=config)
+
+        self.llm_a = _init_llm(llm_a_name)
+        self.llm_b = _init_llm(llm_b_name)
+        self.llm_adv = _init_llm(llm_adv_name)
 
         # --- C. 数据准备 (核心重构：图书馆模式) ---
         # 1. 永远加载全量数据，确保 RAG 能搜到所有的精英
@@ -722,8 +742,9 @@ class MultiModalClassifier:
             self.agent_app = self._build_graph(memory)
 
         # 这里的 thread_id 建议包含 lambda 信息，方便你做 A/B Test
+        thread_id = f"PoliPrompt_{dataset_name}_{experiment_version}_L{str(lambda_param).replace('.','')}_K{kshots}"
         config = {
-            "configurable": {"thread_id": f"job_{dataset_name}_L{str(lambda_param).replace('.','')}"},
+            "configurable": {"thread_id": thread_id},
             "recursion_limit": 3000
         }
         

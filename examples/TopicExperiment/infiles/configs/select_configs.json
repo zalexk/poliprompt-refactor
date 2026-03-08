@@ -1,6 +1,6 @@
 {
     "kmeans": {
-        "n_exemplars": 200,
+        "n_exemplars": 256,
         "init": "k-means++",
         "n_init": "auto",
         "random_state": 42

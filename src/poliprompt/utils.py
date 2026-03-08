@@ -6,6 +6,8 @@ import pandas as pd
 from datetime import datetime as dt
 from pathlib import Path
 import base64
+from functools import lru_cache
+import re
 
 def ensure_workstation_directories(work_station: Path):
     """
@@ -54,43 +56,6 @@ def ensure_workstation_directories(work_station: Path):
         images_out_dir.mkdir(parents=True, exist_ok=True)
         print(f"Created directory: {images_out_dir}")
 
-# def load_data_file(file_path: Path) -> pd.DataFrame:
-#     """
-#     Unified Interface: Automatically selects CSV or JSONL reading based on file extension.
-#     """
-#     if not file_path.exists():
-#         raise FileNotFoundError(f"Data file not found: {file_path}")
-        
-#     if file_path.suffix == '.jsonl':
-#         return pd.read_json(file_path, lines=True)
-#     elif file_path.suffix == '.csv':
-#         return pd.read_csv(file_path, index_col=False)
-#     else:
-#         raise ValueError(f"Unsupported file format: {file_path.suffix}. Use .csv or .jsonl")
-
-
-# def validate_csv_file(file_path: str, feature_col: str, answer_col: str):
-#     # Check if the file exists
-#     if not os.path.exists(file_path):
-#         raise FileNotFoundError(f"File '{file_path}' does not exist.")
-
-#     # Check if the file is a CSV
-#     if not file_path.endswith(".csv"):
-#         raise ValueError(f"File '{file_path}' is not a CSV file.")
-
-#     # Load the CSV file using pandas
-#     try:
-#         df = pd.read_csv(file_path)
-#     except Exception as e:
-#         raise ValueError(f"Failed to read the CSV file '{file_path}': {e}")
-
-#     # Check if feature_col exists in the DataFrame
-#     if feature_col not in df.columns:
-#         raise ValueError(f"Feature column '{feature_col}' does not exist in the CSV file.")
-
-#     # Check if answer_col exists in the DataFrame
-#     if answer_col not in df.columns:
-#         raise ValueError(f"Answer column '{answer_col}' does not exist in the CSV file.")
 
 def load_and_validate_data(
         file_path : Path | str,
@@ -239,4 +204,58 @@ def get_prompt(prompt_file: str | Path) -> str:
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
+    
+
+def parse_llm_response_generic(content: str, options: list = None) -> dict:
+    """
+    产品化解析器：
+    1. 优先尝试标准的 JSON 解析。
+    2. 如果失败，通过正则提取 'label' 和 'reason' 字段后的值。
+    """
+    result = {"label": "unknown", "reason": content}
+    
+    # --- 策略 A: 尝试 JSON 提取 ---
+    try:
+        # 寻找最近的 JSON 块
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+            if "label" in data:
+                result["label"] = str(data["label"])
+            if "reason" in data:
+                result["reason"] = str(data["reason"])
+            return result
+    except Exception:
+        pass
+
+    # --- 策略 B: 正则匹配 (支持跨行) ---
+    # 匹配 label: value (value 可能带引号)
+    label_pattern = r'["\']?label["\']?\s*:\s*["\']?([^"\'\s,}]+)["\']?'
+    # 匹配 reason: 后面的内容直到下一个字段或结尾（跨行）
+    reason_pattern = r'["\']?reason["\']?\s*:\s*["\']?(.*?)(?=\s*[,}]\s*["\']?\w+["\']?\s*:|$)'
+    
+    label_match = re.search(label_pattern, content, re.IGNORECASE | re.DOTALL)
+    if label_match:
+        result["label"] = label_match.group(1).strip()
+    
+    reason_match = re.search(reason_pattern, content, re.IGNORECASE | re.DOTALL)
+    if reason_match:
+        result["reason"] = reason_match.group(1).strip()
+    
+    # 如果用户提供了 options，进行一次对齐
+    if options and result["label"] not in [str(o) for o in options]:
+        for opt in options:
+            # 检查 content 中是否有明确的选项标志（如 <opt> 或 "opt"）
+            if f"<{opt}>" in content or f'"{opt}"' in content or f"'{opt}'" in content:
+                result["label"] = str(opt)
+                break
+                
+    return result
+
+
+@lru_cache(maxsize=500)  # 缓存最近 500 张图片
+def get_base64_image(image_path: str) -> str:
+    """读取图片并返回 base64 编码字符串，使用 LRU 缓存"""
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode('utf-8')
 

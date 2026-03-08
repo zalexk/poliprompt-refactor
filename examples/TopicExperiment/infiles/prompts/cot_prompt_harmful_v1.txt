@@ -1,7 +1,0 @@
-Task: Social Media Content Moderation.
-The goal is to classify memes (Text + Image) into two categories:
-- <1>: Hateful/Harmful content (promotes hate, violence, or discrimination).
-- <0>: Not Hateful/Harmful content (neutral or harmless).
-'**CONCISE SUMMARY RULES:**\n\n- Classify as hateful/harmful (<1>) only if the content clearly promotes, incites, endorses, jokes about, trivializes, or exploits hate, violence, or discrimination against a group or individual, including references to events with significant historical trauma.\n- Classify as not hateful/harmful (<0>) if the content is neutral, ambiguous, expresses opinions or controversial ideas without explicit harm, or uses idioms/expressions that do not promote hate, violence, or discrimination.'
-Complete the task by first analysing the text and than give the answer between '<' and '>'.
-"Note: You MUST explicitly describe what you see in the IMAGE first, then combine it with the text for analysis."
