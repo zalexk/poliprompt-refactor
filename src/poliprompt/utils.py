@@ -8,58 +8,35 @@ from pathlib import Path
 import base64
 from functools import lru_cache
 import re
+import yaml
 
-def ensure_workstation_directories(work_station: Path):
-    """
-    Ensures that the WORK_STATION directory and its subdirectories (infiles/ and outfiles/) exist.
-    """
-    if not work_station.parent.exists():
-        raise FileNotFoundError(f"No valid parent directories exist for the path '{work_station}'.")
-    # parent是path的一个属性，返回父目录；raise代表主动报错
-    # Paths to infiles/ and outfiles/ directories
-    infiles_dir = work_station / "infiles"
-    configs_dir = infiles_dir / "configs"
-    prompts_dir = infiles_dir / "prompts"
-    outfiles_dir = work_station / "outfiles"
-    logs_dir = outfiles_dir / "logs"
-    images_out_dir = outfiles_dir / "images"
-    # 这里是存了一个地址字符串，但还没有这几个文件夹
 
-    # Create directories if they do not exist
-    # 开始创建这几个文件夹，parents代表如果要创建C:/A/B/C,但现在连C:/A都没有，就先递归的先建前面的
-    # exist_ok代表如果文件已经存在就跳过，如果是false第二次运行时存在就会报错
-    if not work_station.exists():
-        work_station.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {work_station}")
+def load_yaml_config(path: Path) -> dict:
+    """加载 YAML 配置文件，返回字典。文件必须存在。"""
+    if not path.exists():
+        raise FileNotFoundError(f"YAML config file not found: {path}")
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f) or {}
 
-    if not infiles_dir.exists():
-        infiles_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {infiles_dir}")
 
-    if not configs_dir.exists():
-        configs_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {configs_dir}")
+def load_json_config(path: Path) -> dict:
+    """加载 JSON 配置文件，返回字典。文件必须存在。"""
+    if not path.exists():
+        raise FileNotFoundError(f"JSON config file not found: {path}")
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-    if not prompts_dir.exists():
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {prompts_dir}")
 
-    if not outfiles_dir.exists():
-        outfiles_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {outfiles_dir}")
-
-    if not logs_dir.exists():
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {logs_dir}")
-
-    if not images_out_dir.exists():
-        images_out_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created directory: {images_out_dir}")
+# def get_prompt(path: str | Path) -> str:
+#     """读取 prompt 文本文件，返回字符串。"""
+#     if not path.exists():
+#         raise FileNotFoundError(f"Prompt file not found: {path}")
+#     return path.read_text(encoding='utf-8')
 
 
 def load_and_validate_data(
         file_path : Path | str,
-        feature_col : str,
+        text_col : str,
         answer_col : str=None,
         image_col : str=None
 )-> pd.DataFrame:
@@ -87,7 +64,7 @@ def load_and_validate_data(
     
     missing_cols = []
     
-    if (feature_col not in df.columns) and (image_col not in df.columns):
+    if (text_col not in df.columns) and (image_col not in df.columns):
         raise ValueError("The dataset must contain at least one valid feature column ('text' or 'image').")
     
     if answer_col and answer_col not in df.columns:
@@ -120,6 +97,7 @@ def read_docs_from_dataframe(df: pd.DataFrame, column_name: str="text"):
     docs = df[column_name].tolist()
 
     return docs
+
 
 def read_multimodal_docs_from_dataframe(df,text_col,img_col,img_root):
     """
@@ -159,19 +137,6 @@ def read_multimodal_docs_from_dataframe(df,text_col,img_col,img_root):
     return multimodal_questions
 
 
-def track_computation_time(elapsed_time: float) -> None:
-    """
-    Tracks the computation time and prints it in hours, minutes, and seconds.
-
-    Parameters:
-        - elapsed_time (float): The elapsed time using time.time().
-    """
-    hours, rem = divmod(elapsed_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    return hours, minutes, seconds
-    print(f"Computation time: {int(hours):02}:{int(minutes):02}:{int(seconds):02}")
-
-
 def load_config(configs_path: str | Path, name: str) -> Dict:
     """
     Load the configuration from a specific json file.
@@ -196,10 +161,10 @@ def load_config(configs_path: str | Path, name: str) -> Dict:
         raise ValueError(f"Error decoding JSON from file: {configs_path}")
 
 
-def get_prompt(prompt_file: str | Path) -> str:
-    if isinstance(prompt_file, str):
-        prompt_file = Path(prompt_file)
-    return prompt_file.read_text()
+# def get_prompt(prompt_file: str | Path) -> str:
+#     if isinstance(prompt_file, str):
+#         prompt_file = Path(prompt_file)
+#     return prompt_file.read_text()
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:

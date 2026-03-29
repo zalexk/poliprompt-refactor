@@ -1,9 +1,19 @@
-import os
 from setuptools import setup, find_packages
-from setuptools.command.install import install
 
 setup(
-    package_dir={"": "src"},  # This points setuptools to the src directory
-    packages=["poliprompt"],  # This is your main package in src/poliprompt
+    name="poliprompt",
+    version="0.2.1",
+    package_dir={"": "src"},  
+    packages=find_packages(where="src"), 
+    python_requires=">=3.10",
+    install_requires=[
+        "langchain",
+        "langchain-openai",
+        "langgraph",
+        "tenacity",
+        "python-dotenv",
+        "tqdm",
+        "openai",
+        "dashscope"
+    ]
 )
-python_requires=">=3.10"

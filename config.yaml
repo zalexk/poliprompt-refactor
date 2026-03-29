@@ -1,29 +1,40 @@
-# ==========================================
-# PoliPrompt v3.1 Configuration File
+  # ==========================================
+# PoliPrompt v2 Configuration File
 # ==========================================
 
 project:
-  name: "Hateful Memes Classification"
-  data_path: "./examples/HatefulMemes/train.jsonl"
-  image_dir: "./examples/HatefulMemes/img"
-  outfiles_dir: "./outfiles"         # 统一管理所有的输出、缓存和数据库文件
+  name: "Multimodal Classification with PoliPrompt v2"
+  version: "v1"
+  modality: "multimodal"    # "multimodal" 或 "text"
+  work_station: "D:/PoliPrompt-main/examples/HatefulMemes"   # 用户工作目录绝对路径
+  data_path: "train.jsonl"   # 相对于 work_station
+  image_dir: "."         # 相对于 work_station（多模态时必需）
+  outfiles_dir: "outfiles" # 相对于 work_station
 
-# 前端用户可以自定义的核心参数 (A/B Test 实验参数)
+column_mapping:
+  text_col: "text"
+  image_col: "img"                 # 多模态时必需
+  answer_col: "label"
+
 user_settings:
-  lambda_param: 1.0                  # 核心！0 (完全多样性) <---> 1.0 (纯相似度，验证近邻偏见)
-  k_shots: 5                         # 检索的 Few-shot 样本数
-  options:["1", "0"]                # 分类标签
-  testing_size: 128                  # 测试模式下的任务队列截断大小（注：不截断知识库！）
+  lambda_param: 0.5                # 0: 完全多样性, 1: 纯相似度
+  k_shots: 3
+  options: ["0", "1"]  # 可选标签列表
+  testing: false
+  testing_size: 128
 
 models:
-  embedding_llm: "qwen3-vl-1024"     # 1024维多模态嵌入模型 (全局建库用)
-  primary_llm: "gpt-4o-mini"         # L1: 高性价比初筛
-  secondary_llm: "qwen-vl-max"       # L2: 跨厂商异构仲裁者
-  expert_llm: "gpt-4o"               # L3: 专家复杂 CoT 兜底
+  embedding_llm: "qwen"
+  primary_llm: "gpt-4o-mini"
+  secondary_llm: "qwen-vl-max"
+  expert_llm: "gpt-4o"
 
 retrieval:
-  n_exemplars_pool: 200              # 后台精炼池大小 (Selector 提取的精英库大小)
+  n_exemplars_pool: 256
+
+parallel:
+  num_workers: 2
 
 observability:
-  enable_langsmith: true             # 配合 .env 开启 LangSmith 追踪
-  sqlite_db_name: "poliprompt_checkpoints.db" # LangGraph 记忆持久化库名
+  enabled: true
+  provider: "langfuse"               # 待调研
