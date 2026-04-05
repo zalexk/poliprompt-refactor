@@ -37,7 +37,12 @@ class TextClassifier(BaseClassifier):
     def _get_embeddings(self, docs_dicts: List[dict]) -> np.ndarray:
         # 直接调用父类统一封装好的逻辑即可，或者在此处传参
         from .llm_contribs import get_universal_embeddings
-        return get_universal_embeddings(docs_dicts, self.embedding_llm_name, self.num_workers)
+        return get_universal_embeddings(
+                    docs_dicts,
+                    self.embedding_llm_name,
+                    max_workers=self.embedding_workers,
+                    batch_size=self.embedding_batch_size,
+                )
 
     def _prepare_agent_messages(self, idx: int, item: dict, is_expert: bool = False):
         """

@@ -1,62 +1,11 @@
 {   
-    "gpt-3.5-turbo": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "gpt-3.5-turbo-1106": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "gpt-4o": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "claude-3-haiku-20240307": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "claude-3-sonnet-20240229": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "gpt-4-turbo": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "mistral-large-latest": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "open-mistral-nemo": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "mistral-medium-latest": {
-        "max_tokens": 1000,
-        "temperature": 0.0  
-    },
-    "gemini-1.0-pro": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "mistral-small-2402": {
-        "max_tokens": 1000,
-        "temperature": 0.0 
-    },
-    "gpt-4o-mini": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "gemini-1.5-flash-latest": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "claude-3-5-sonnet-20240620": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    },
-    "qwen-vl-max": {
-        "max_tokens": 1000,
-        "temperature": 0.0
-    }
+    "gpt-4o-mini": { "max_tokens": 1000, "temperature": 0.0, "level": "standard" },
+    "gemini-1.5-flash": { "max_tokens": 1000, "temperature": 0.0, "level": "standard" },
+    "claude-3-haiku": { "max_tokens": 1000, "temperature": 0.0, "level": "standard" },
+    "qwen-vl-plus": { "max_tokens": 1000, "temperature": 0.0, "level": "standard" },
+    
+    "gpt-4o": { "max_tokens": 2000, "temperature": 0.0, "level": "expert" },
+    "claude-3-5-sonnet-20240620": { "max_tokens": 2000, "temperature": 0.0, "level": "expert" },
+    "gemini-1.5-pro": { "max_tokens": 2000, "temperature": 0.0, "level": "expert" },
+    "qwen-vl-max": { "max_tokens": 2000, "temperature": 0.0, "level": "expert" }
 }

@@ -1,40 +1,42 @@
-  # ==========================================
-# PoliPrompt v2 Configuration File
+# ==========================================
+# PoliPrompt v3.2 Configuration File
 # ==========================================
 
 project:
-  name: "Multimodal Classification with PoliPrompt v2"
+  name: "MyProject"
   version: "v1"
-  modality: "multimodal"    # "multimodal" 或 "text"
-  work_station: "D:/PoliPrompt-main/examples/HatefulMemes"   # 用户工作目录绝对路径
-  data_path: "train.jsonl"   # 相对于 work_station
-  image_dir: "."         # 相对于 work_station（多模态时必需）
-  outfiles_dir: "outfiles" # 相对于 work_station
+  modality: "multimodal"        # "text" or "multimodal"
+  work_station: "D:/PoliPrompt-main/examples/HatefulMemes"
+  data_path: "train.jsonl"      # relative to work_station
+  image_dir: "."                # relative to work_station (multimodal only)
+  outfiles_dir: "outfiles"      # relative to work_station
 
 column_mapping:
   text_col: "text"
-  image_col: "img"                 # 多模态时必需
+  image_col: "img"              # set to "None" for text-only tasks
   answer_col: "label"
 
 user_settings:
-  lambda_param: 0.5                # 0: 完全多样性, 1: 纯相似度
+  lambda_param: 0.5             # 0 = max diversity, 1 = max similarity
   k_shots: 3
-  options: ["0", "1"]  # 可选标签列表
+  options: ["0", "1"]
   testing: false
   testing_size: 128
 
 models:
-  embedding_llm: "qwen"
+  embedding_llm: "qwen"         # use "qwen" for multimodal, "openai" for text-only
   primary_llm: "gpt-4o-mini"
-  secondary_llm: "qwen-vl-max"
+  secondary_llm: "gpt-4o-mini"
   expert_llm: "gpt-4o"
 
 retrieval:
   n_exemplars_pool: 256
 
 parallel:
-  num_workers: 2
+  embedding_workers: 8          # 并发批次数，IO 密集，推荐 8-12
+  inference_workers: 2          # inference 并发，受 API 限速，推荐 2-4
+  embedding_batch_size: 5       # 每批样本数：Qwen 推荐 5，OpenAI 推荐 32
 
 observability:
   enabled: true
-  provider: "langfuse"               # 待调研
+  provider: "langfuse"

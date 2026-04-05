@@ -27,12 +27,6 @@ def load_json_config(path: Path) -> dict:
         return json.load(f)
 
 
-# def get_prompt(path: str | Path) -> str:
-#     """读取 prompt 文本文件，返回字符串。"""
-#     if not path.exists():
-#         raise FileNotFoundError(f"Prompt file not found: {path}")
-#     return path.read_text(encoding='utf-8')
-
 
 def load_and_validate_data(
         file_path : Path | str,
@@ -161,10 +155,6 @@ def load_config(configs_path: str | Path, name: str) -> Dict:
         raise ValueError(f"Error decoding JSON from file: {configs_path}")
 
 
-# def get_prompt(prompt_file: str | Path) -> str:
-#     if isinstance(prompt_file, str):
-#         prompt_file = Path(prompt_file)
-#     return prompt_file.read_text()
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:

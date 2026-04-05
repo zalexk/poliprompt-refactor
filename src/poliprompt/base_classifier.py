@@ -31,7 +31,6 @@ class ClassificationResult(BaseModel):
     reason: str = Field(description="Detailed reasoning based on the input data.")
 
 class AgentState(TypedDict):
-    # Task control
     pending_indices: List[int]
     current_index: Optional[int]
 
@@ -44,7 +43,7 @@ class AgentState(TypedDict):
     rag_indices: List[int]
 
     results: Annotated[Dict[str, dict], operator.ior] 
-    final_path: str    # (e.g. "L3_Consensus", "HITL")
+    final_path: str    
     temp_prediction: Optional[str] 
 
 
@@ -53,6 +52,9 @@ class BaseClassifier(ABC):
         self.env_path = Path(env_path).expanduser().absolute()
         self.config_path = Path(config_path).expanduser().absolute()
         self.prompt_path = Path(prompt_path).expanduser().absolute()
+
+        self.ui_model_configs = kwargs.get('ui_model_configs')
+
         if system_configs_dir:
             self.system_configs_dir = Path(system_configs_dir).absolute()
         else:
@@ -71,7 +73,7 @@ class BaseClassifier(ABC):
         self._parse_config_to_self()
 
         # 核心资源安装 (模型实例与 RAG 索引)
-        self._setup_models()
+        self. _setup_models()
         self._setup_rag_resources(mandatory=False)
 
         self.outfiles_dir.mkdir(parents=True, exist_ok=True)
@@ -79,7 +81,11 @@ class BaseClassifier(ABC):
         self._setup_observability()
 
         self.hitl_lock = threading.Lock()
-        self.log_lock = threading.Lock() 
+        self.log_lock  = threading.Lock()
+
+        # Streamlit HITL 队列（None = 终端模式）
+        self.hitl_request_queue  = None
+        self.hitl_response_queue = None
 
         # 子类钩子
         self._post_init()
@@ -127,7 +133,10 @@ class BaseClassifier(ABC):
         self.n_exemplars_pool = retrieval.get('n_exemplars_pool', 256)
 
         parallel = self.config.get('parallel', {})
-        self.num_workers = parallel.get('num_workers', 4) 
+        self.num_workers         = parallel.get('inference_workers',
+                                     parallel.get('num_workers', 2))   # inference 并发
+        self.embedding_workers   = parallel.get('embedding_workers', 8)  # embedding 并发
+        self.embedding_batch_size = parallel.get('embedding_batch_size', 5)  # 每批样本数
 
         obs = self.config.get('observability', {})
         self.observability_enabled = obs.get('enabled', False)
@@ -141,24 +150,59 @@ class BaseClassifier(ABC):
         self.df = None
     
     
-    def _setup_models(self):
-        logger.info("Initializing Heterogeneous LLMs...")
-        self.llm_a = create_llm(self.primary_llm_name, self.llm_configs[self.primary_llm_name])
-        self.llm_b = create_llm(self.secondary_llm_name, self.llm_configs[self.secondary_llm_name])
-        self.llm_adv = create_llm(self.expert_llm_name, self.llm_configs[self.expert_llm_name])
+    # def _create_ui_llm(self, cfg):
+    #     from langchain_openai import ChatOpenAI
+    #     return ChatOpenAI(
+    #         model=cfg['model'],
+    #         openai_api_key=cfg['api_key'],
+    #         base_url=cfg['base_url'],
+    #         temperature=cfg['temp'],
+    #         max_tokens=cfg['tokens']
+    #     )
     
+    def _setup_models(self):
+        """模型初始化：统一调用超级工厂函数"""
+        # 1. 确定配置源
+        if self.ui_model_configs:
+            # 来自 UI 的动态字典 (key 是 'l1', 'l2', 'l3')
+            source = self.ui_model_configs 
+            l1_data = source.get('l1')
+            l2_data = source.get('l2')
+            l3_data = source.get('l3')
+        else:
+            # 来自本地 YAML 的配置 (key 是 'primary_llm' 等)
+            source = self.config.get('models', {})
+            l1_data = source.get('primary_llm', 'gpt-4o-mini')
+            l2_data = source.get('secondary_llm', 'qwen-vl-max')
+            l3_data = source.get('expert_llm', 'gpt-4o')
+
+        # 2. 调用超级工厂进行实例化
+        # 注意：create_llm 会自动判断传入的是字符串还是字典
+        self.llm_a = create_llm(l1_data, self.llm_configs.get(self.primary_llm_name))
+        self.llm_b = create_llm(l2_data, self.llm_configs.get(self.secondary_llm_name))
+        self.llm_adv = create_llm(l3_data, self.llm_configs.get(self.expert_llm_name))
+        
     def _setup_observability(self):
-        """初始化观测处理器 (Langfuse)"""
-        if self.observability_enabled and self.observability_provider == "langfuse":
-            from langfuse.callback import CallbackHandler
-            self.lf_handler = CallbackHandler(
-                public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-                secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-                host=os.getenv("LANGFUSE_HOST")
-            )
-            logger.info("📡 Langfuse Observability initialized.")
+        """初始化观测处理器 (带容错)"""
+        # 如果用户禁用了，或者虽然开启了但没填 Key，都不初始化
+        pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+        sk = os.getenv("LANGFUSE_SECRET_KEY")
+        
+        if self.observability_enabled and self.observability_provider == "langfuse" and pk and sk:
+            try:
+                from langfuse.callback import CallbackHandler
+                self.lf_handler = CallbackHandler(
+                    public_key=pk,
+                    secret_key=sk,
+                    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+                )
+                logger.info("📡 Langfuse initialized successfully.")
+            except Exception as e:
+                logger.warning(f"⚠️ Langfuse init failed: {e}. Running without observability.")
+                self.lf_handler = None
         else:
             self.lf_handler = None
+            logger.info("📡 Running without Langfuse observability.")
 
     def create_few_shot_pool(self):
         embeddings_file = self.outfiles_dir / "embeddings.index"
@@ -178,7 +222,12 @@ class BaseClassifier(ABC):
         emb_config = self.embedding_llm_configs.get(self.embedding_llm_name, {})
         real_model_name = emb_config.get("model", self.embedding_llm_name)
 
-        embeddings = get_universal_embeddings(docs, model_name=real_model_name, max_workers=self.num_workers)
+        embeddings = get_universal_embeddings(
+            docs,
+            model_name=real_model_name,
+            max_workers=self.embedding_workers,
+            batch_size=self.embedding_batch_size,
+        )
         # embeddings = embeddings.astype('float32')
         
         try:
@@ -203,7 +252,7 @@ class BaseClassifier(ABC):
 
         # 6. 保存结果
         try:
-            exemplars_file.write_text(json.dumps(exemplar_indices, indent=4))
+            exemplars_file.write_text(json.dumps(exemplar_indices, indent=4), encoding='utf-8')
             self.indices = exemplar_indices  # 同步到实例变量，供后续使用
             logger.info(f"Exemplar indices saved to {exemplars_file}")
         except Exception as e:
@@ -247,7 +296,8 @@ class BaseClassifier(ABC):
             # 🚀 核心改动 1: 定义单个样本的提取逻辑，用于多线程
             def _extract_single_logic(idx):
                 try:
-                    item = self.df.iloc[idx].to_dict()
+                    # _get_item_standardized 로 절대 경로 포함한 표준 dict 사용
+                    item = self._get_item_standardized(idx)
                     ans = self.df.loc[idx, self.answer_col]
                     
                     # 构建消息
@@ -285,7 +335,7 @@ class BaseClassifier(ABC):
                         extracted_rules_dict[idx_str] = reason
                         pbar.update(1) # 每完成一个线程，进度条加 1
 
-            rules_path.write_text(json.dumps(extracted_rules_dict, indent=4, ensure_ascii=False))
+            rules_path.write_text(json.dumps(extracted_rules_dict, indent=4, ensure_ascii=False), encoding='utf-8')
             self.rules_dict = extracted_rules_dict
         else:
             with open(rules_path, 'r', encoding='utf-8') as f:
@@ -485,12 +535,20 @@ class BaseClassifier(ABC):
         item = self._get_item_standardized(idx)
 
         with self.hitl_lock:
-            # 🚀 删掉了“捡漏”逻辑，现在一定会停下来等你输入
-            print(f"\n--- 👤 [HUMAN INTERVENTION REQUIRED] Row {idx} ---")
-            self._display_item_for_hitl(item)
-            
-            options_hint = "/".join(self.options)
-            user_input = input(f"Definitive Label ({options_hint}): ").strip()
+            if self.hitl_request_queue is not None:
+                # Streamlit 模式：发送到 UI 队列，阻塞等待界面输入
+                print(f"\n--- 👤 [HITL] Row {idx}: waiting for Streamlit UI ---")
+                self.hitl_request_queue.put({
+                    "idx": idx, "item": item, "options": self.options
+                })
+                user_input = self.hitl_response_queue.get(timeout=7200)
+                print(f"\u2705 [Row {idx}] Received UI label: {user_input}")
+            else:
+                # 终端模式 fallback
+                print(f"\n--- 👤 [HUMAN INTERVENTION REQUIRED] Row {idx} ---")
+                self._display_item_for_hitl(item)
+                options_hint = "/".join(self.options)
+                user_input = input(f"Definitive Label ({options_hint}): ").strip()
 
             # 1. 更新内存中的标签（用于当前 Batch 的后续对比，如果需要的话）
             self.df.at[idx, self.answer_col] = user_input
@@ -507,9 +565,8 @@ class BaseClassifier(ABC):
                     self.pool_embeddings_cache = np.vstack([self.pool_embeddings_cache, new_vector])
                 
                 # 持久化精英索引文件，确保下次启动时这个样本还在池子里
-                with open(self.outfiles_dir / "exemplar_indices.json", "w") as f:
+                with open(self.outfiles_dir / "exemplar_indices.json", "w", encoding='utf-8') as f:
                     json.dump(self.indices, f, indent=4)
-                
                 print(f"✅ [Row {idx}] added to Exemplar Pool.")
 
         # 返回结果，Graph 会带着它冲向 auto_update 节点并存入 SQLite 数据库
@@ -756,94 +813,6 @@ class BaseClassifier(ABC):
         sync_to_backup_file(target_indices)
         print(f"--- ✨ Finished! Backup saved at {self.backup_file} ---")
 
-
-    # def annotate(self):
-    #     import sqlite3
-    #     # 🚀 现代化兼容导入逻辑
-    #     try:
-    #         # 尝试最新的标准路径
-    #         from langgraph.checkpoint.sqlite import SqliteSaver
-    #     except ImportError:
-    #         try:
-    #             # 尝试独立包路径
-    #             from langgraph_checkpoint_sqlite import SqliteSaver
-    #         except ImportError:
-    #             # 🚨 如果实在找不到，提示用户安装
-    #             logger.error("❌ Not foundSqliteSaver。please: pip install langgraph-checkpoint-sqlite")
-    #             raise ImportError("Please install langgraph-checkpoint-sqlite")
-
-    #     self._setup_rag_resources(mandatory=True)
-    #     self._ensure_data_loaded()
-
-    #     print(f"--- 🚀 Starting Inference: {self.project_name} ---")
-    #     # self.df = utils.load_and_validate_data(self.data_path, self.text_col, self.answer_col, self.image_col)
-    #     db_path = self.outfiles_dir / "poliprompt_checkpoints.db"
-    #     conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    #     memory = SqliteSaver(conn)
-    #     self.agent_app = self._build_graph(memory)
-
-    #     self.output_file = self.outfiles_dir / f"{self.project_name}_agent_results.csv"
-    #     self.backup_file = self.outfiles_dir / f"{self.project_name}_backup.csv"
-    #     standardized_docs = self._convert_df_to_docs(self.df)
-
-    #     all_indices = self.df.index.tolist()
-    #     pending = all_indices[:self.testing_size] if self.testing else all_indices
-
-    #     thread_id = f"{self.project_name}_{self.version}_L{str(self.lambda_param).replace('.','')}"
-    #     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 3000}
-
-    #     current_state = self.agent_app.get_state(config)
-    #     if not current_state.values:
-    #         initial_state = {
-    #             "pending_indices": pending,
-    #             "current_index": None,
-    #             "data": standardized_docs,
-    #             "results": {},
-    #             "l1_res": None,"l2_res": None,"l3_res_list": [], 
-    #             "rag_distances": [], "rag_labels": [], "rag_indices": []
-    #         }
-    #         input_data = initial_state
-    #     else:
-    #         print(f"🔄 Resuming from checkpoint. Remaining: {len(current_state.values.get('pending_indices', []))}")
-    #         input_data = None
-
-    #     try:
-    #         count = 0
-    #         for event in self.agent_app.stream(input_data, config):
-    #             if "auto_update" in event:
-    #                 count += 1
-    #                 # 每 10 个样本自动同步一次 CSV 供肉眼查看
-    #                 if count % 10 == 0:
-    #                     snap = self.agent_app.get_state(config)
-    #                     res_dict = snap.values.get("results", {})
-    #                     temp_df = self.df.loc[pending].copy() # 只导出待办部分的
-    #                     for s_idx, res in res_dict.items():
-    #                         i = int(s_idx)
-    #                         temp_df.at[i, "predicted_label"] = res["final_label"]
-    #                         temp_df.at[i, "inference_path"] = res["path"]
-    #                     temp_df.to_csv(self.backup_file)
-
-    #             if "__interrupt__" in event:
-    #                 print(f"\n[PAUSED] Row {self.agent_app.get_state(config).values.get('current_index')} needs HITL.")
-    #                 return 
-
-    #         # --- E. 结果最终收割 ---
-    #         final_snapshot = self.agent_app.get_state(config)
-    #         final_results_dict = final_snapshot.values.get("results", {})
-            
-    #         output_df = self.df.loc[pending].copy() 
-    #         for str_idx, res in final_results_dict.items():
-    #             idx = int(str_idx)
-    #             if idx in output_df.index:
-    #                 # 只填入 CSV 需要的字段
-    #                 output_df.at[idx, "predicted_label"] = res["final_label"]
-    #                 output_df.at[idx, "inference_path"] = res["path"]
-            
-    #         output_df.to_csv(self.output_file, index=False)
-    #         print(f"--- ✅ Mission Accomplished! Results saved to {self.output_file} ---")
-
-    #     except Exception as e:
-    #         print(f"Error during execution: {e}")
 
     def _post_init(self):
         pass

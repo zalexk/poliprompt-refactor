@@ -3,13 +3,13 @@
         "model": "text-embedding-3-small", 
         "batch_size": 32  
     },
-    "voyageai": {
-        "model": "voyage-2", 
-        "batch_size": 32
-    },
     "qwen": {
         "model": "qwen3-vl-embedding",
         "batch_size": 5,
         "max_workers": 12
+    },
+    "voyageai": {
+        "model": "voyage-2", 
+        "batch_size": 32
     }
 }
