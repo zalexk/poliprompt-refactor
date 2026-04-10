@@ -25,9 +25,9 @@ user_settings:
 
 models:
   embedding_llm: "qwen"         # use "qwen" for multimodal, "openai" for text-only
-  primary_llm: "gpt-4o-mini"
-  secondary_llm: "gpt-4o-mini"
-  expert_llm: "gpt-4o"
+  primary_llm: "gpt-4o"
+  secondary_llm: "gemini-2.5-flash"
+  expert_llm: "gemini-2.5-pro"
 
 retrieval:
   n_exemplars_pool: 256

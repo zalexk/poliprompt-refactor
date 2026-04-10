@@ -814,6 +814,89 @@ class BaseClassifier(ABC):
         print(f"--- ✨ Finished! Backup saved at {self.backup_file} ---")
 
 
+
+    def evaluate(self) -> dict:
+        """
+        从 backup CSV 读取推理结果，对有 ground truth 的样本计算分类指标。
+        对标签类型完全通用：int / float / str 均可。
+        """
+        from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+        import pandas as pd
+ 
+        backup_path = self.outfiles_dir / f"{self.project_name}_backup.csv"
+        if not backup_path.exists():
+            raise FileNotFoundError(f"Backup CSV not found: {backup_path}. Please run Annotate first.")
+ 
+        df    = pd.read_csv(backup_path, encoding='utf-8-sig')
+        total = len(df)
+ 
+        # 统一标准化：fillna → str → strip → 去掉 .0 后缀
+        def norm(series):
+            return (series.fillna("")
+                          .astype(str)
+                          .str.strip()
+                          .str.replace(r"\.0$", "", regex=True))
+ 
+        # options 也做同样的标准化，保证比较时类型一致
+        valid = {str(o).strip().replace(".0", "") for o in self.options}
+ 
+        has_gt   = norm(df[self.answer_col]).isin(valid)
+        has_pred = norm(df["predicted_label"]).isin(valid)
+ 
+        n_no_gt      = int((~has_gt).sum())
+        n_infer_fail = int((has_gt & ~has_pred).sum())
+        n_evaluated  = int((has_gt & has_pred).sum())
+ 
+        print(f"\n{'='*60}\n📊 Evaluation Summary\n{'='*60}")
+        print(f"  Total rows             : {total}")
+        print(f"  No ground truth        : {n_no_gt}")
+        print(f"  Inference failed       : {n_infer_fail}")
+        print(f"  Evaluated              : {n_evaluated}")
+        print(f"{'='*60}\n")
+ 
+        if n_evaluated == 0:
+            print("⚠️  No valid samples to evaluate.")
+            return {"total": total, "n_no_gt": n_no_gt,
+                    "n_infer_fail": n_infer_fail, "n_evaluated": n_evaluated}
+ 
+        eval_df = df[has_gt & has_pred].copy()
+        y_true  = norm(eval_df[self.answer_col]).tolist()
+        y_pred  = norm(eval_df["predicted_label"]).tolist()
+        labels  = sorted(valid)
+ 
+        cm    = confusion_matrix(y_true, y_pred, labels=labels)
+        cm_df = pd.DataFrame(cm, index=[f"True_{l}" for l in labels],
+                                  columns=[f"Pred_{l}" for l in labels])
+        print("Confusion Matrix:\n", cm_df.to_string(), "\n")
+ 
+        report_str  = classification_report(y_true, y_pred, labels=labels, digits=4)
+        report_dict = classification_report(y_true, y_pred, labels=labels,
+                                            output_dict=True, zero_division=0)
+        print("Classification Report:\n", report_str)
+ 
+        accuracy  = accuracy_score(y_true, y_pred)
+        per_class = {
+            lbl: {k: (round(v, 4) if isinstance(v, float) else int(v))
+                  for k, v in report_dict.get(lbl, {}).items()}
+            for lbl in labels
+        }
+        averages = {
+            avg: {k: (round(v, 4) if isinstance(v, float) else int(v))
+                  for k, v in report_dict[avg].items()}
+            for avg in ("macro avg", "weighted avg")
+            if avg in report_dict
+        }
+ 
+        return {
+            "total": total, "n_no_gt": n_no_gt,
+            "n_infer_fail": n_infer_fail, "n_evaluated": n_evaluated,
+            "accuracy": round(accuracy, 4),
+            "confusion_matrix": cm_df,
+            "per_class": per_class,
+            "averages": averages,
+            "labels": labels,
+        }
+    
     def _post_init(self):
         pass
     

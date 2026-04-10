@@ -1,11 +1,5 @@
 {
-    "gpt-4o-mini": {
-        "max_tokens": 1000,
-        "temperature": 0.0,
-        "level": "standard",
-        "multimodal": true
-    },
-    "gemini-1.5-flash-latest": {
+    "gpt-4o": {
         "max_tokens": 1000,
         "temperature": 0.0,
         "level": "standard",
@@ -17,26 +11,13 @@
         "level": "standard",
         "multimodal": true
     },
-    "claude-3-haiku-20240307": {
+    "gemini-2.5-flash": {
         "max_tokens": 1000,
         "temperature": 0.0,
         "level": "standard",
         "multimodal": true
     },
-    "mistral-small-latest": {
-        "max_tokens": 1000,
-        "temperature": 0.0,
-        "level": "standard",
-        "multimodal": false
-    },
-
-    "gpt-4o": {
-        "max_tokens": 2000,
-        "temperature": 0.0,
-        "level": "expert",
-        "multimodal": true
-    },
-    "gemini-1.5-pro-latest": {
+    "gpt-5": {
         "max_tokens": 2000,
         "temperature": 0.0,
         "level": "expert",
@@ -48,16 +29,10 @@
         "level": "expert",
         "multimodal": true
     },
-    "claude-3-5-sonnet-20240620": {
+    "gemini-2.5-pro": {
         "max_tokens": 2000,
         "temperature": 0.0,
         "level": "expert",
         "multimodal": true
-    },
-    "mistral-large-latest": {
-        "max_tokens": 2000,
-        "temperature": 0.0,
-        "level": "expert",
-        "multimodal": false
     }
 }
