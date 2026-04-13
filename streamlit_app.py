@@ -6,9 +6,13 @@ import yaml
 import threading
 import time
 import html as _html
+import pandas as pd
 import streamlit as st
 from pathlib import Path
 from dotenv import set_key, dotenv_values
+
+from poliprompt import TextClassifier, MultiModalClassifier
+from poliprompt.llm_contribs import PROVIDERS
 
 st.set_page_config(
     page_title="PoliPrompt",
@@ -18,7 +22,7 @@ st.set_page_config(
 )
 
 # ──────────────────────────────────────────────
-# 工具：stdout + stderr 实时捕获
+# Utilities: real-time stdout + stderr capture
 # ──────────────────────────────────────────────
 class _QueueWriter:
     def __init__(self, q: queue.Queue, original):
@@ -96,7 +100,7 @@ def run_with_live_log(func, log_placeholder, done_cb=None):
     return err_box[0] is None, err_box[0]
 
 # ──────────────────────────────────────────────
-# 配置文件加载
+# Config file loading
 # ──────────────────────────────────────────────
 _THIS_DIR = Path(__file__).parent
 
@@ -115,23 +119,28 @@ def _load_llm_configs() -> dict:
     p = _find_config("llm_configs.json")
     return json.loads(p.read_text(encoding="utf-8")) if p else {}
 
-@st.cache_data
-def _load_emb_configs() -> dict:
-    p = _find_config("embedding_llm_configs.json")
-    return json.loads(p.read_text(encoding="utf-8")) if p else {}
-
-def get_models(level: str, modality: str) -> list:
-    cfg = _load_llm_configs()
-    out = [k for k, v in cfg.items()
-           if v.get("level") == level
-           and (modality == "text" or v.get("multimodal", False))]
-    return out if out else [f"(no {level} models found)"]
-
 def get_default(model_name: str, key: str, fallback):
     return _load_llm_configs().get(model_name, {}).get(key, fallback)
 
+def _load_existing_config(path: Path) -> dict:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {} if path.exists() else {}
+    except Exception:
+        return {}
+
+def _detect_provider(model_name: str) -> str:
+    """Infer the PROVIDERS key from a model name, defaulting to 'openai'."""
+    name = (model_name or "").lower()
+    if "claude" in name:
+        return "anthropic"
+    if "gemini" in name:
+        return "google"
+    if "qwen" in name or "vl-embedding" in name:
+        return "qwen"
+    return "openai"
+
 # ──────────────────────────────────────────────
-# 侧边栏：API Credentials
+# Sidebar: Model Configuration
 # ──────────────────────────────────────────────
 env_file     = _THIS_DIR / ".env"
 existing_env = dotenv_values(env_file) if env_file.exists() else {}
@@ -139,31 +148,102 @@ existing_env = dotenv_values(env_file) if env_file.exists() else {}
 def ev(key, default=""):
     return existing_env.get(key, default)
 
-VENDORS = [
-    dict(label="OpenAI",          key_env="OPENAI_API_KEY",    url_env="OPENAI_BASE_URL",    hint="https://api.openai.com/v1"),
-    dict(label="Google",          key_env="GOOGLE_API_KEY",    url_env="GOOGLE_BASE_URL",    hint="https://generativelanguage.googleapis.com/v1beta/openai"),
-    dict(label="Alibaba / Qwen",  key_env="DASHSCOPE_API_KEY", url_env="DASHSCOPE_BASE_URL", hint="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+# (role, icon, label, default provider, default model)
+ROLE_META = [
+    ("embedding_llm", "🔍", "Embedding LLM",      "openai", "text-embedding-3-small"),
+    ("primary_llm",   "🟢", "Primary LLM (L1)",   "openai", "gpt-4o-mini"),
+    ("secondary_llm", "🟡", "Secondary LLM (L2)", "qwen",   "qwen-vl-max"),
+    ("expert_llm",    "🔴", "Expert LLM (L3)",    "openai", "gpt-4o"),
 ]
-vendor_inputs = {}
+
+_provider_keys = list(PROVIDERS.keys())
+
+# Load existing config early so the sidebar can pre-fill saved model names
+# even before the user interacts with the work_station field in Section 1.
+_early_ws       = Path(st.session_state.get("ws_path_str", str(Path.home())))
+_cfg_early      = _load_existing_config(_early_ws / "config.yaml")
+_early_models   = _cfg_early.get("models", {})
+
+role_cfgs: dict     = {}
+langfuse_inputs: dict = {}
 
 with st.sidebar:
-    st.title("🔑 API Credentials")
-    st.caption("Fill in only the vendors you use. **Base URL** is optional.")
+    st.title("🤖 Model Configuration")
 
-    for v in VENDORS:
-        with st.expander(v["label"], expanded=False):
-            vendor_inputs[v["key_env"]] = st.text_input("API Key",  value=ev(v["key_env"]), type="password", key=f"k_{v['key_env']}", help="API Key from the vendor's official website. Saved to your local .env file and never uploaded.")
-            vendor_inputs[v["url_env"]] = st.text_input("Base URL", value=ev(v["url_env"]), placeholder=v["hint"],    key=f"u_{v['url_env']}", help="Leave blank to use the official endpoint. Fill in your relay/proxy URL if using a third-party gateway.")
+    for role, icon, label, def_prov, def_model in ROLE_META:
+        saved_model   = _early_models.get(role, def_model)
+        detected_prov = _detect_provider(saved_model)
+        prov_idx      = _provider_keys.index(detected_prov) if detected_prov in _provider_keys else 0
+
+        with st.expander(f"{icon} {label}", expanded=False):
+            provider  = st.selectbox(
+                "Provider",
+                _provider_keys,
+                index=prov_idx,
+                key=f"prov_{role}",
+                format_func=lambda k: PROVIDERS[k]["label"],
+            )
+            prov_info = PROVIDERS[provider]
+
+            # Embedding LLM shows embedding models first; other roles show inference models.
+            if role == "embedding_llm":
+                model_list = prov_info["embedding_models"] or prov_info["inference_models"]
+            else:
+                model_list = prov_info["inference_models"]
+
+            if not model_list:
+                st.caption(f"⚠️ {prov_info['label']} has no supported models for this role.")
+                model_list = [saved_model or def_model]
+
+            model_idx = model_list.index(saved_model) if saved_model in model_list else 0
+            model     = st.selectbox("Model", model_list, index=model_idx, key=f"model_{role}")
+
+            api_key  = st.text_input(
+                "API Key",
+                value=ev(prov_info["api_key_env"]),
+                type="password",
+                key=f"key_{role}",
+                help=f"Stored under `{prov_info['api_key_env']}` in .env. Leave blank if already saved.",
+            )
+            base_url = st.text_input(
+                "Base URL (optional)",
+                value=ev(prov_info["base_url_env"]),
+                placeholder=prov_info["default_url"] or "Provider default endpoint",
+                key=f"url_{role}",
+                help="Leave blank to use the official endpoint. Fill in for proxies or custom deployments.",
+            )
+            role_cfgs[role] = {"provider": provider, "model": model,
+                               "api_key": api_key,   "base_url": base_url}
+
+        # Warn immediately if the chosen embedding provider has no embedding support.
+        if role == "embedding_llm" and role in role_cfgs:
+            emb_prov = role_cfgs["embedding_llm"]["provider"]
+            if not PROVIDERS[emb_prov]["embedding_models"]:
+                st.warning(
+                    f"⚠️ **{PROVIDERS[emb_prov]['label']}** has no embedding API. "
+                    "Switch to **openai** (text) or **qwen** (multimodal)."
+                )
 
     st.divider()
     with st.expander("📡 Langfuse (Observability)", expanded=False):
-        vendor_inputs["LANGFUSE_PUBLIC_KEY"] = st.text_input("Public Key", value=ev("LANGFUSE_PUBLIC_KEY"), type="password", key="k_LF_PK")
-        vendor_inputs["LANGFUSE_SECRET_KEY"] = st.text_input("Secret Key", value=ev("LANGFUSE_SECRET_KEY"), type="password", key="k_LF_SK")
-        vendor_inputs["LANGFUSE_HOST"]       = st.text_input("Host",       value=ev("LANGFUSE_HOST"),       placeholder="https://cloud.langfuse.com", key="k_LF_HOST")
+        langfuse_inputs["LANGFUSE_PUBLIC_KEY"] = st.text_input("Public Key",  value=ev("LANGFUSE_PUBLIC_KEY"), type="password", key="k_LF_PK")
+        langfuse_inputs["LANGFUSE_SECRET_KEY"] = st.text_input("Secret Key",  value=ev("LANGFUSE_SECRET_KEY"), type="password", key="k_LF_SK")
+        langfuse_inputs["LANGFUSE_HOST"]       = st.text_input("Host",        value=ev("LANGFUSE_HOST"),        placeholder="https://cloud.langfuse.com", key="k_LF_HOST")
 
-    if st.button("💾 Save API Keys to .env", use_container_width=True):
+    if st.button("💾 Save Credentials to .env", use_container_width=True):
         env_file.parent.mkdir(parents=True, exist_ok=True)
-        for k, val in vendor_inputs.items():
+        # Save per-provider keys/URLs (deduplicated — multiple roles may share a provider).
+        _saved_provs: set = set()
+        for rc in role_cfgs.values():
+            pk = rc["provider"]
+            if pk not in _saved_provs:
+                _saved_provs.add(pk)
+                pi = PROVIDERS[pk]
+                if rc["api_key"]:
+                    set_key(str(env_file), pi["api_key_env"], rc["api_key"])
+                if rc["base_url"]:
+                    set_key(str(env_file), pi["base_url_env"], rc["base_url"])
+        for k, val in langfuse_inputs.items():
             if val:
                 set_key(str(env_file), k, val)
         st.success(f"Saved → `{env_file}`")
@@ -172,7 +252,7 @@ with st.sidebar:
     st.caption("**PoliPrompt**")
 
 # ──────────────────────────────────────────────
-# 主界面
+# Main interface
 # ──────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -186,19 +266,13 @@ st.markdown("""
 
 st.title("🛡️ PoliPrompt Control Center")
 
-def _load_existing_config(path: Path) -> dict:
-    try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {} if path.exists() else {}
-    except Exception:
-        return {}
-
 # ══════════════════════════════════════════════
 # SECTION 1 ▸ project
 # ══════════════════════════════════════════════
 with st.expander("📦 **project**", expanded=True):
     col_ws, col_name, col_ver, col_mod = st.columns([3, 2, 1, 1])
-    ws_raw = col_ws.text_input("work_station  *(absolute path)*", help="Absolute path to your project root directory, e.g. D:/MyProject/HatefulMemes. All relative paths are resolved from here.",
-                                value=st.session_state.get("ws_path_str", "D:/PoliPrompt-main/examples/HatefulMemes"))
+    ws_raw = col_ws.text_input("work_station  *(absolute path)*", help="Absolute path to your project root directory. All relative paths are resolved from here.",
+                                value=st.session_state.get("ws_path_str", str(Path.home())))
     ws_path = Path(ws_raw).expanduser().absolute()
     st.session_state["ws_path_str"] = str(ws_path)
 
@@ -250,53 +324,35 @@ with st.expander("⚙️ **user_settings**", expanded=True):
     testing_size = ud.number_input("testing_size", 8, 2048, int(usr.get("testing_size", 128)), disabled=not testing, help="Number of samples to process in testing mode.")
 
 # ══════════════════════════════════════════════
-# SECTION 4 ▸ models + hyperparams
+# SECTION 4 ▸ Inference Hyperparameters
 # ══════════════════════════════════════════════
-with st.expander("🤖 **models**", expanded=True):
-    mdls        = cfg_existing.get("models", {})
-    emb_choices = list(_load_emb_configs().keys()) or ["openai", "qwen"]
-    std_models  = get_models("standard", modality)
-    exp_models  = get_models("expert",   modality)
+with st.expander("🤖 **Inference Hyperparameters**", expanded=True):
+    # Models are selected in the sidebar; warn here if the embedding provider
+    # does not support the chosen task modality.
+    emb_provider = role_cfgs.get("embedding_llm", {}).get("provider", "openai")
+    if modality == "multimodal" and emb_provider != "qwen":
+        st.warning(
+            f"⚠️ **{PROVIDERS[emb_provider]['label']}** does not support multimodal (image + text) "
+            "embeddings. Switch the **Embedding LLM** provider to **qwen** in the sidebar."
+        )
 
-
-    cfg_path_found = _find_config("llm_configs.json")
-    st.caption(f"📂 Config: `{cfg_path_found}`" if cfg_path_found else "⚠️ llm_configs.json not found")
-
-    m1, m2, m3, m4 = st.columns(4)
-    def _pick(col, label, key, choices, saved, help_text=""):
-        idx = choices.index(saved) if saved in choices else 0
-        return col.selectbox(label, choices, index=idx, key=f"mdl_{key}", help=help_text)
-
-    embedding_llm = _pick(m1, "🔍 embedding_llm", "emb", emb_choices, mdls.get("embedding_llm", emb_choices[0]),
-                          help_text="Embedding model for converting data into vectors. Choose qwen for multimodal tasks (image + text), openai for text-only.")
-    primary_llm   = _pick(m2, "🟢 primary_llm",   "l1",  std_models,  mdls.get("primary_llm",  std_models[0]),
-                          help_text="Layer 1 inference model (L1). Fast and cost-efficient. When L1 and L2 agree, the result is accepted directly.")
-    secondary_llm = _pick(m3, "🟡 secondary_llm", "l2",  std_models,  mdls.get("secondary_llm", std_models[0]),
-                          help_text="Layer 2 arbitration model (L2). Cross-validates L1 output. Recommended to choose a different vendor from L1 for diversity.")
-    expert_llm    = _pick(m4, "🔴 expert_llm",    "l3",  exp_models,  mdls.get("expert_llm",   exp_models[0]),
-                          help_text="Layer 3 expert model (L3). Only invoked when L1 and L2 disagree. Most capable and most expensive.")
-
-    if modality == "multimodal" and embedding_llm == "openai":
-        st.warning("⚠️ OpenAI embedding is text-only. Switch to **qwen** for multimodal tasks.")
-
-    st.markdown("---")
-    st.caption("Inference hyperparameters per agent:")
+    st.caption("Temperature and token limit per inference agent (L1 / L2 / L3):")
     card1, card2, card3 = st.columns(3)
     with card1:
         with st.container(border=True):
-            st.markdown("🟢 **Primary**")
-            l1_temp   = st.slider("Temperature", 0.0, 1.0, get_default(primary_llm,   "temperature", 0.0), 0.05, key="l1_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
-            l1_tokens = st.number_input("Max Tokens", 100, 4000, get_default(primary_llm,   "max_tokens", 1000), key="l1_tok", help="Maximum output tokens per inference call. 500~1000 is sufficient for classification. Higher values increase cost.")
+            st.markdown("🟢 **Primary (L1)**")
+            l1_temp   = st.slider("Temperature", 0.0, 1.0, get_default(role_cfgs["primary_llm"]["model"],   "temperature", 0.0), 0.05, key="l1_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
+            l1_tokens = st.number_input("Max Tokens", 100, 4000, get_default(role_cfgs["primary_llm"]["model"],   "max_tokens", 1000), key="l1_tok", help="Maximum output tokens per inference call.")
     with card2:
         with st.container(border=True):
-            st.markdown("🟡 **Secondary**")
-            l2_temp   = st.slider("Temperature", 0.0, 1.0, get_default(secondary_llm, "temperature", 0.0), 0.05, key="l2_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
-            l2_tokens = st.number_input("Max Tokens", 100, 4000, get_default(secondary_llm, "max_tokens", 1000), key="l2_tok", help="Maximum output tokens per inference call. 500~1000 is sufficient for classification.")
+            st.markdown("🟡 **Secondary (L2)**")
+            l2_temp   = st.slider("Temperature", 0.0, 1.0, get_default(role_cfgs["secondary_llm"]["model"], "temperature", 0.0), 0.05, key="l2_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
+            l2_tokens = st.number_input("Max Tokens", 100, 4000, get_default(role_cfgs["secondary_llm"]["model"], "max_tokens", 1000), key="l2_tok", help="Maximum output tokens per inference call.")
     with card3:
         with st.container(border=True):
-            st.markdown("🔴 **Expert**")
-            l3_temp   = st.slider("Temperature", 0.0, 1.0, get_default(expert_llm,    "temperature", 0.0), 0.05, key="l3_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
-            l3_tokens = st.number_input("Max Tokens", 100, 4000, get_default(expert_llm,    "max_tokens", 2000), key="l3_tok", help="Expert model needs more space for reasoning output. Recommended: 1000~2000.")
+            st.markdown("🔴 **Expert (L3)**")
+            l3_temp   = st.slider("Temperature", 0.0, 1.0, get_default(role_cfgs["expert_llm"]["model"],    "temperature", 0.0), 0.05, key="l3_temp", help="Output randomness. 0 = fully deterministic. Keep at 0.0 for classification tasks.")
+            l3_tokens = st.number_input("Max Tokens", 100, 4000, get_default(role_cfgs["expert_llm"]["model"],    "max_tokens", 2000), key="l3_tok", help="Expert model needs more space for reasoning. Recommended: 1000~2000.")
 
 # ══════════════════════════════════════════════
 # SECTION 5 ▸ retrieval / parallel / observability
@@ -318,7 +374,7 @@ with st.expander("⚡ **parallel**", expanded=False):
 
 with st.expander("📡 **observability**", expanded=False):
     ow1, ow2 = st.columns(2)
-    obs_enabled  = ow1.toggle("enabled",  value=bool(obs.get("enabled", True)), help="When enabled, inference traces are uploaded to Langfuse for monitoring. Requires Langfuse keys in the sidebar.")
+    obs_enabled  = ow1.toggle("enabled",  value=bool(obs.get("enabled", False)), help="When enabled, inference traces are uploaded to Langfuse for monitoring. Requires Langfuse keys in the sidebar.")
     obs_provider = ow2.selectbox("provider", ["langfuse"], disabled=not obs_enabled, help="Currently supports Langfuse. More providers can be added in the future.")
 
 # ══════════════════════════════════════════════
@@ -331,7 +387,7 @@ with st.expander("📝 **Seed Prompt**", expanded=True):
     seed_prompt    = st.text_area("Classification instructions / meta rules:", value=default_prompt, height=220)
 
 # ──────────────────────────────────────────────
-# YAML 预览
+# YAML preview
 # ──────────────────────────────────────────────
 st.divider()
 
@@ -343,8 +399,7 @@ def _build_config() -> dict:
         "column_mapping": {"text_col": text_col, "image_col": image_col, "answer_col": answer_col},
         "user_settings":  {"lambda_param": lambda_param, "k_shots": int(k_shots),
                            "options": options_list, "testing": testing, "testing_size": int(testing_size)},
-        "models":         {"embedding_llm": embedding_llm, "primary_llm": primary_llm,
-                           "secondary_llm": secondary_llm, "expert_llm": expert_llm},
+        "models":         {role: rc["model"] for role, rc in role_cfgs.items()},
         "retrieval":      {"n_exemplars_pool": int(n_exemplars_pool)},
         "parallel":       {"embedding_workers":    int(embedding_workers),
                            "inference_workers":    int(inference_workers),
@@ -356,7 +411,7 @@ with st.expander("👁️ Preview  `config.yaml`", expanded=False):
     st.code(yaml.dump(_build_config(), sort_keys=False, allow_unicode=True), language="yaml")
 
 # ──────────────────────────────────────────────
-# 初始化
+# Initialisation
 # ──────────────────────────────────────────────
 if st.button("🚀  Save Config & Initialise Classifier", type="primary", use_container_width=True):
     try:
@@ -370,20 +425,28 @@ if st.button("🚀  Save Config & Initialise Classifier", type="primary", use_co
 
         root_env = _THIS_DIR / ".env"
 
+        def _role_cfg(rc: dict, temp: float, tokens: int) -> dict:
+            """Build an inline model config dict, injecting api_key/base_url if provided."""
+            cfg = {"model": rc["model"], "temperature": float(temp), "max_tokens": int(tokens)}
+            if rc["api_key"]:
+                cfg["api_key"] = rc["api_key"]
+            if rc["base_url"]:
+                cfg["base_url"] = rc["base_url"]
+            return cfg
+
         ui_model_configs = {
-            "l1": {"model": primary_llm,   "temperature": float(l1_temp), "max_tokens": int(l1_tokens)},
-            "l2": {"model": secondary_llm, "temperature": float(l2_temp), "max_tokens": int(l2_tokens)},
-            "l3": {"model": expert_llm,    "temperature": float(l3_temp), "max_tokens": int(l3_tokens)},
+            "l1": _role_cfg(role_cfgs["primary_llm"],   l1_temp, l1_tokens),
+            "l2": _role_cfg(role_cfgs["secondary_llm"], l2_temp, l2_tokens),
+            "l3": _role_cfg(role_cfgs["expert_llm"],    l3_temp, l3_tokens),
         }
 
-        from poliprompt import TextClassifier, MultiModalClassifier
         ClassifierCls = MultiModalClassifier if modality == "multimodal" else TextClassifier
         clf = ClassifierCls(
             env_path=root_env, config_path=config_out, prompt_path=prompt_abs,
             ui_model_configs=ui_model_configs,
         )
 
-        # 注入 HITL 队列
+        # Inject HITL queues into the classifier
         hitl_req_q = queue.Queue()
         hitl_res_q = queue.Queue()
         clf.hitl_request_queue  = hitl_req_q
@@ -395,7 +458,7 @@ if st.button("🚀  Save Config & Initialise Classifier", type="primary", use_co
         st.session_state["init_done"]       = True
         st.session_state["annotate_running"] = False
 
-        # 自动检测已有文件
+        # Auto-detect existing phase output files
         outfiles_abs = ws_path / outfiles_dir
         pool_exists  = ((outfiles_abs / "embeddings.index").exists() and
                         (outfiles_abs / "exemplar_indices.json").exists())
@@ -417,7 +480,7 @@ if st.button("🚀  Save Config & Initialise Classifier", type="primary", use_co
         st.exception(e)
 
 # ──────────────────────────────────────────────
-# 工作流步骤
+# Workflow steps
 # ──────────────────────────────────────────────
 if st.session_state.get("init_done"):
     st.divider()
@@ -457,7 +520,7 @@ if st.session_state.get("init_done"):
             else:
                 st.error(f"❌ {err}")
 
-    # ── Step 3 启动按钮 ──────────────────────────
+    # ── Step 3 start button ──────────────────────
     with s3:
         st.markdown("##### Step 3 · Annotate")
         st.caption("Parallel multi-agent batch inference")
@@ -491,7 +554,7 @@ if st.session_state.get("init_done"):
             st.session_state["annotate_running"] = True
             st.rerun()
 
-# ── Annotate 轮询块（每次 rerun 都会执行）──────
+# ── Annotation polling block (runs on every rerun) ──
 if st.session_state.get("annotate_running"):
     st.divider()
     st.markdown("#### 📋 Annotation Progress")
@@ -500,7 +563,7 @@ if st.session_state.get("annotate_running"):
     log_q = st.session_state.get("annotate_log_q")
     lines = st.session_state.get("annotate_lines", [])
 
-    # 收集新日志
+    # Drain any new log lines from the background thread
     if log_q:
         try:
             while True:
@@ -510,7 +573,7 @@ if st.session_state.get("annotate_running"):
     st.session_state["annotate_lines"] = lines
     _render_log(log_ph, lines)
 
-    # 检查线程是否结束
+    # Check whether the background thread has finished
     t = st.session_state.get("annotate_thread")
     thread_done = t and not t.is_alive()
 
@@ -523,20 +586,21 @@ if st.session_state.get("annotate_running"):
             st.success("✅ Annotation complete!")
         st.rerun()
     else:
-        # 检查 HITL 请求
-        # 关键：检测到 HITL 后不立刻 rerun，让脚本继续往下执行渲染卡片
+        # Check for a pending HITL request.
+        # Important: do NOT rerun immediately after detecting one — let the
+        # script continue executing so the HITL card below is rendered.
         if hitl_req and not st.session_state.get("hitl_pending"):
             try:
                 req = hitl_req.get_nowait()
                 st.session_state["hitl_pending"] = req
-                # 不 rerun！让脚本继续执行到 HITL 卡片渲染部分
+                # Fall through without rerun so the HITL card renders this cycle.
             except queue.Empty:
-                # 没有 HITL 请求，继续轮询日志
+                # No HITL request — continue polling for log updates.
                 if not st.session_state.get("hitl_pending"):
                     time.sleep(0.5)
                     st.rerun()
 
-# ── HITL 卡片──────────────────────────────────
+# ── HITL card ────────────────────────────────
 if st.session_state.get("hitl_pending"):
     req  = st.session_state["hitl_pending"]
     idx  = req["idx"]
@@ -559,18 +623,16 @@ if st.session_state.get("hitl_pending"):
                 st.caption("No image / image not found")
 
         chosen = st.radio("Select label:", opts, horizontal=True, key=f"hitl_radio_{idx}")
-        reason = st.text_input("Reason (optional):", key=f"hitl_reason_{idx}")
 
         if st.button("✅  Confirm Label", type="primary", key=f"hitl_confirm_{idx}"):
             hitl_res.put(chosen)
             st.session_state.pop("hitl_pending", None)
             st.rerun()
 
-# ── 结果预览──────────────────────────────────
+# ── Results preview ──────────────────────────
 if st.session_state.get("init_done"):
     backup_csv = ws_path / outfiles_dir / f"{proj_name}_backup.csv"
     if backup_csv.exists():
-        import pandas as pd
         st.divider()
         st.subheader("📊 Results Preview")
         df_res = pd.read_csv(backup_csv)
@@ -622,7 +684,6 @@ if st.session_state.get("init_done") and (ws_path / outfiles_dir / f"{proj_name}
                     "**F1-score**: harmonic mean of precision and recall — the primary metric for imbalanced datasets.  "
                     "**Support**: number of actual occurrences of this class in the evaluated set."
                 )
-                import pandas as pd
                 per_df = pd.DataFrame(results["per_class"]).T
                 per_df.index.name = "Class"
                 st.dataframe(per_df, use_container_width=True)

@@ -1,21 +1,22 @@
-import os
 import logging
 import numpy as np
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from .base_classifier import BaseClassifier
 from . import utils
-from .utils import encode_image, get_base64_image
+from .utils import get_base64_image
 from .retrieves import select_kshots
 
 logger = logging.getLogger(__name__)
 
 
 class MultiModalClassifier(BaseClassifier):
+    """Classifier for datasets that combine text and images."""
 
     def _convert_df_to_docs(self, df):
-        """将数据框转为带图片路径的字典列表"""
+        """Convert a DataFrame to a list of text + image path dicts for embedding."""
         return utils.read_multimodal_docs_from_dataframe(
             df, self.text_col, self.image_col, self.image_dir
         )
@@ -33,34 +34,28 @@ class MultiModalClassifier(BaseClassifier):
 
     def _abs_image_path(self, raw_path) -> str | None:
         """
-        将任意来源的图片路径统一转换为绝对路径。
-        - 如果已经是绝对路径且存在，直接返回。
-        - 否则尝试 image_dir / raw_path 拼接。
-        - 路径不存在则返回 None。
+        Resolve any image path to an absolute path.
+
+        - If already absolute and exists, return as-is.
+        - Otherwise, try joining with image_dir.
+        - Returns None if the file cannot be found.
         """
         if not raw_path or str(raw_path).strip() in ("", "None", "nan"):
             return None
-        p = str(raw_path)
-        # 已经是绝对路径
-        if os.path.isabs(p) and os.path.exists(p):
-            return p
-        # 尝试 image_dir 拼接
+        p = Path(str(raw_path))
+        if p.is_absolute() and p.exists():
+            return str(p)
         if self.image_dir:
-            candidate = str(self.image_dir / p) if hasattr(self.image_dir, '__truediv__') else os.path.join(str(self.image_dir), p)
-            if os.path.exists(candidate):
-                return candidate
-        # 相对路径原样检查（极少情况）
-        if os.path.exists(p):
-            return p
-        logger.warning(f"Image not found: {p}")
+            candidate = self.image_dir / p
+            if candidate.exists():
+                return str(candidate)
+        if p.exists():
+            return str(p)
+        logger.warning(f"Image not found: {raw_path}")
         return None
 
     def _prepare_agent_messages(self, idx: int, item: dict, is_expert: bool = False):
-        """
-        多模态版本：拼接图文 Few-shot + 当前图文 Task
-        item 由 _get_item_standardized 生成，image_path 已是绝对路径。
-        """
-        # 1. 检索 K-Shot
+        """Build the multimodal prompt messages (text + base64 images) for an inference call."""
         examples, dists, labels, r_indices = select_kshots(
             self.df, self.text_col, self.image_col, self.answer_col,
             self.k_shots, idx, self.indices, self.faiss_index,
@@ -70,17 +65,14 @@ class MultiModalClassifier(BaseClassifier):
             rules_dict=self.rules_dict
         )
 
-        # 2. System Content
         system_content = self.prompt_text
         if hasattr(self, 'enhanced_rules') and self.enhanced_rules:
             system_content += f"\n\n### CRITICAL RULES FROM HUMAN EXPERTS:\n{self.enhanced_rules}"
 
-        # 3. User Payload
         user_payload = []
         user_payload.append({"type": "text",
                               "text": "### REFERENCE EXAMPLES (Analyze both Image and Text):\n"})
 
-        # --- Few-shot 示例 ---
         for i, ex in enumerate(examples):
             user_payload.append({
                 "type": "text",
@@ -90,8 +82,7 @@ class MultiModalClassifier(BaseClassifier):
                          f"Reasoning: {ex['explanation']}")
             })
 
-            # 修复：ex['image_path'] 来自 select_kshots，是 DataFrame 里的相对路径
-            # 必须通过 _abs_image_path 转换为绝对路径
+            # ex['image_path'] is a relative path from the DataFrame; resolve to absolute
             ex_img = self._abs_image_path(ex.get('image_path'))
             if ex_img:
                 b64_img = get_base64_image(ex_img)
@@ -102,15 +93,14 @@ class MultiModalClassifier(BaseClassifier):
                 })
             user_payload.append({"type": "text", "text": "---\n"})
 
-        # 4. 当前 Query
         user_payload.append({
             "type": "text",
             "text": f"\n### CURRENT TASK:\nText: {item[self.text_col]}"
         })
 
-        # item['image_path'] 由 _get_item_standardized 生成，已是绝对路径
+        # item['image_path'] is already an absolute path set by _get_item_standardized
         query_img = item.get('image_path')
-        if query_img and os.path.exists(query_img):
+        if query_img and Path(query_img).exists():
             b64_query = get_base64_image(query_img)
             detail = "high" if is_expert else "low"
             user_payload.append({
@@ -126,10 +116,10 @@ class MultiModalClassifier(BaseClassifier):
         return messages, dists, labels, r_indices
 
     def _display_item_for_hitl(self, item: dict):
-        """Streamlit / Jupyter 环境下的图片展示"""
+        """Display the text and image for HITL review (inline in Jupyter, path in terminal)."""
         print(f"Text Content: {item[self.text_col]}")
         img_path = item.get('image_path')
-        if img_path and os.path.exists(img_path):
+        if img_path and Path(img_path).exists():
             try:
                 from PIL import Image
                 from IPython.display import display
@@ -137,4 +127,4 @@ class MultiModalClassifier(BaseClassifier):
             except Exception:
                 print(f"Image: {img_path}")
         else:
-            print(f"⚠️ Image not found: {img_path}")
+            print(f"Image not found: {img_path}")
