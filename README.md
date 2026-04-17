@@ -105,7 +105,7 @@ Two example datasets are included under `examples/`:
 - `work_station`: absolute path to `examples/HarmfulMemes-tiny`
 - `modality`: `multimodal`
 - `data_path`: `train-tiny.jsonl`
-- `image_dir`: `img`
+- `image_dir`: `.` *(the JSONL file already contains the subfolder prefix `img/`, so set this to `.` to use `work_station` as the image root)*
 - `options`: `0, 1`
 
 **Text — BBC News topic classification:**
