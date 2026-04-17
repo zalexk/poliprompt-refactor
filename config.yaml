@@ -7,7 +7,7 @@ project:
   version: "v1"
   modality: "multimodal"        # "text" or "multimodal"
   work_station: "D:/PoliPrompt-main/examples/HatefulMemes"
-  data_path: "train.jsonl"      # relative to work_station
+  data_path: "train-tiny.jsonl"      # relative to work_station
   image_dir: "."                # relative to work_station (multimodal only)
   outfiles_dir: "outfiles"      # relative to work_station
 

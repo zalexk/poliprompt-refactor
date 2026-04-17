@@ -5,9 +5,8 @@
 *.db
 *.sqlite
 
-# test dataset
-examples/HatefulMemes/
-examples/HarmfulMemes-tiny/
+# Output files (generated at runtime)
+examples/**/outfiles/
 
 # Unsupported Dockerfile
 Dockerfile

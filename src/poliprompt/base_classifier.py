@@ -192,7 +192,7 @@ class BaseClassifier(ABC):
 
         if self.observability_enabled and self.observability_provider == "langfuse" and pk and sk:
             try:
-                from langfuse.callback import CallbackHandler
+                from langfuse.langchain import CallbackHandler
                 self.lf_handler = CallbackHandler(
                     public_key=pk,
                     secret_key=sk,

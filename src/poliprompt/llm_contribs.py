@@ -80,7 +80,7 @@ PROVIDERS: dict = {
         "base_url_env": "DASHSCOPE_BASE_URL",
         "default_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "inference_models": ["qwen-vl-max", "qwen-vl-plus", "qwen-max", "qwen-turbo"],
-        "embedding_models": ["qwen3-vl-embedding", "qwen-vl-max"],
+        "embedding_models": ["qwen3-vl-embedding"],
     },
 }
 

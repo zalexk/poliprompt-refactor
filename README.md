@@ -52,58 +52,107 @@ flowchart TD
 
 ## Installation
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.10+.
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/geshijoker/PoliPrompt.git
-cd PoliPrompt
-uv sync                       # core dependencies only
-```
+# 1. Install uv (skip if already installed)
+pip install uv
 
-Install the LLM provider you need:
+# 2. Clone the repository
+git clone https://github.com/cora0413/PoliPrompt-Refactor.git
+cd PoliPrompt-Refactor
 
-```bash
+# 3. Install dependencies — choose what you need:
 uv sync --extra openai        # OpenAI (GPT-4o, embeddings)
 uv sync --extra qwen          # Alibaba / Qwen (multimodal embeddings)
 uv sync --extra google        # Google Gemini
-uv sync --extra anthropic     # Anthropic (Claude)
-uv sync --extra all           # all providers + Streamlit UI + observability
+uv sync --extra anthropic     # Anthropic / Claude
+uv sync --extra all           # All providers + Streamlit UI + observability
 ```
+
+## API Keys
+
+Obtain API keys from your provider before running:
+
+| Provider | Environment Variable | Where to Get |
+|---|---|---|
+| OpenAI | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
+| Alibaba / Qwen | `DASHSCOPE_API_KEY` | https://dashscope.console.aliyun.com/ |
+| Google | `GOOGLE_API_KEY` | https://aistudio.google.com/apikey |
+| Anthropic | `ANTHROPIC_API_KEY` | https://console.anthropic.com/ |
 
 ## Streamlit UI
 
-A no-code interface for configuring and running the full pipeline:
+The easiest way to run PoliPrompt — no coding required.
+
+> Requires `uv sync --extra all`
 
 ```bash
-uv sync --extra all
-streamlit run streamlit_app.py
+uv run streamlit run streamlit_app.py
 ```
 
-The sidebar has one expander per LLM role (**Embedding**, **Primary L1**, **Secondary L2**, **Expert L3**). For each role, select a provider (OpenAI, Anthropic, Google, Qwen), pick a model from the dropdown, and enter your API key and optional base URL. Click **Save Credentials to .env** to persist them locally.
+**Steps in the UI:**
+1. Enter your API keys in the sidebar → click **Save Credentials to .env**
+2. Fill in project settings (dataset path, label options, models)
+3. Run in order: **Build Pool → Optimise Rules → Annotate**
+4. Click **Run Evaluation** to view accuracy, F1, and confusion matrix
 
-In the main panel, fill in project settings, column mapping, and inference hyperparameters, then click **Save Config & Initialise Classifier**. Run the three pipeline phases in order — live logs stream as each phase executes. When models disagree, a Human-in-the-Loop card appears inline for manual labeling.
+### Quick Demo with Included Datasets
 
----
+Two example datasets are included under `examples/`:
+
+**Multimodal — Hateful Memes detection (0 = not hateful, 1 = hateful):**
+- `work_station`: absolute path to `examples/HarmfulMemes-tiny`
+- `modality`: `multimodal`
+- `data_path`: `train-tiny.jsonl`
+- `image_dir`: `img`
+- `options`: `0, 1`
+
+**Text — BBC News topic classification:**
+- `work_station`: absolute path to `examples/BBCNews-tiny`
+- `modality`: `text`
+- `data_path`: `BBCNews-tiny.csv`
+- `options`: `politics, business, sport, technology, entertainment`
+
+## Python API
+
+For developers and researchers who prefer code:
+
+```python
+from poliprompt import TextClassifier, MultiModalClassifier
+
+clf = TextClassifier(
+    config_path="path/to/config.yaml",
+    prompt_path="path/to/prompt.txt",
+)
+
+clf.create_few_shot_pool()       # Phase 1: embed + select exemplars
+clf.optimize_task_description()  # Phase 2: extract reasoning rules
+clf.annotate()                   # Phase 3: classify all rows
+
+metrics = clf.evaluate()
+print(f"Accuracy: {metrics['accuracy']:.3f}")
+```
+
+A complete end-to-end example (both text and multimodal) is available in
+`notebooks/TopicExperiment.ipynb`. Select the `.venv` kernel and run all cells.
 
 ## Documentation
 
 | Section | Contents |
 |---|---|
-| [Getting Started](./docs/getting-started/introduction.md) | What PoliPrompt is and how to run your first classification |
-| [API](./docs/api/reference.md) | Public methods of `TextClassifier` and `MultiModalClassifier` |
-| [Concepts](./docs/concepts/architecture.md) | Inference pipeline, LangGraph state machine, and component design |
-| [Configuration](./docs/configuration/configuration.md) | All `config.yaml` fields explained |
-| [About](./docs/about/about-us.md) | Project background, changelog, and roadmap |
+| [Getting Started](docs/getting-started/introduction.md) | What PoliPrompt is and when to use it |
+| [Quick Start](docs/getting-started/quickstart.md) | Step-by-step installation and first run |
+| [API Reference](docs/api/reference.md) | Public methods of `TextClassifier` and `MultiModalClassifier` |
+| [Configuration](docs/configuration/configuration.md) | All `config.yaml` fields explained |
+| [Architecture](docs/concepts/architecture.md) | Inference pipeline and component design |
+| [Changelog](docs/about/changelog.md) | Version history |
 
 ## Citation
 
-To cite the [PoliPrompt](https://arxiv.org/abs/2409.01466) paper:
-
 ```bibtex
-@article{liu2024poliprompt,
+@article{poliprompt2024,
   title={PoliPrompt: A High-Performance Cost-Effective LLM-Based Text Classification Framework for Political Science},
-  author={Liu, Menglin and Shi, Ge},
-  journal={arXiv preprint arXiv:2409.01466},
-  year={2024}
+  url={https://arxiv.org/abs/2409.01466}
 }
 ```
