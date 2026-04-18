@@ -56,10 +56,14 @@ Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # 1. Install uv (skip if already installed)
-pip install uv
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # 2. Clone the repository
-git clone https://github.com/cora0413/PoliPrompt-Refactor.git
+git clone -b multimodal-feature-refinement https://github.com/cora0413/PoliPrompt-Refactor.git
 cd PoliPrompt-Refactor
 
 # 3. Install dependencies — choose what you need:
