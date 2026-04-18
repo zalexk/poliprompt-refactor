@@ -179,10 +179,10 @@ def test_load_config_missing_file_raises(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_parse_clean_json():
-    content = '{"label": "1", "reason": "Harmful content detected."}'
+    content = '{"label": "1", "reason": "Hateful content detected."}'
     result = parse_llm_response_generic(content, options=["0", "1"])
     assert result["label"] == "1"
-    assert "Harmful" in result["reason"]
+    assert "Hateful" in result["reason"]
 
 
 def test_parse_json_embedded_in_prose():
