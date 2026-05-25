@@ -643,72 +643,133 @@ if st.session_state.get("init_done"):
             file_name=backup_csv.name, mime="text/csv",
         )
 
-# ── Step 4: Evaluate ─────────────────────────
+# --- Step 4: Evaluate ---------------------------------------------------------
 if st.session_state.get("init_done") and (ws_path / outfiles_dir / f"{proj_name}_backup.csv").exists():
     st.divider()
-    st.subheader("📐 Step 4 · Evaluate")
-    st.caption("Compute classification metrics on results with ground truth labels.")
+    st.subheader("Step 4 - Evaluate")
+    st.caption("Compute clean classification metrics and diagnostic signals from inference traces.")
 
-    if st.button("📊  Run Evaluation", use_container_width=True, type="secondary", key="btn_evaluate"):
+    if st.button("Run Evaluation", use_container_width=True, type="secondary", key="btn_evaluate"):
         clf = st.session_state["classifier"]
         try:
             with st.spinner("Computing metrics..."):
                 results = clf.evaluate()
 
-            st.markdown("#### 📋 Data Coverage")
-            st.caption("Shows how many rows were used for evaluation and how many were skipped.")
-            cov1, cov2, cov3, cov4 = st.columns(4)
-            cov1.metric("Total rows", results["total"],
+            def _fmt_rate(value):
+                return "N/A" if value is None else f"{value * 100:.1f}%"
+
+            def _fmt_score(value):
+                return "N/A" if value is None else f"{value:.4f}"
+
+            for warning in results.get("warnings", []):
+                st.warning(warning)
+
+            st.markdown("#### Data Coverage")
+            st.caption("Shows clean evaluation coverage after excluding initial exemplar-pool rows and HITL-added rows.")
+            cov1, cov2, cov3, cov4, cov5 = st.columns(5)
+            cov1.metric("Total rows", results.get("total", 0),
                         help="Total number of rows in the backup CSV.")
-            cov2.metric("Evaluated", results["n_evaluated"],
-                        help="Rows with both a valid ground truth label and a valid predicted label. Only these rows contribute to the metrics.")
-            cov3.metric("No ground truth (skipped)", results["n_no_gt"],
-                        help="Rows where the ground truth label column is empty or NaN. These are skipped and do not affect any metric.")
-            cov4.metric("Inference failed (skipped)", results["n_infer_fail"],
-                        help="Rows where inference produced an invalid result (e.g. 'unknown' or empty). These are skipped even if ground truth is available.")
+            cov2.metric("Leaked excluded", results.get("n_leaked_excluded", 0),
+                        help="Rows excluded because they are in exemplar_indices.json.")
+            cov3.metric("Clean evaluated", results.get("n_evaluated", 0),
+                        help="Non-leaked rows with both valid ground truth and valid prediction.")
+            cov4.metric("Inference failed", results.get("n_infer_fail", 0),
+                        help="Non-leaked rows with valid ground truth but invalid prediction.")
+            cov5.metric("No ground truth", results.get("n_no_gt", 0),
+                        help="Non-leaked rows where the ground truth label is empty or invalid.")
 
-            if results["n_evaluated"] == 0:
-                st.warning("No samples with both ground truth and valid predictions found.")
+            st.info(
+                "Clean metrics and ECR exclude initial exemplar-pool rows and HITL-added rows. "
+                "HITL rate is computed separately from exemplar-pool growth relative to "
+                "non-initial-pool processed rows."
+            )
+
+            st.markdown("#### Diagnostic Signals")
+            diag1, diag2, diag3, diag4 = st.columns(4)
+            diag1.metric("ECR", _fmt_rate(results.get("ecr")),
+                         help="Expert Call Rate: L3_Expert_Consensus count divided by clean evaluated rows.")
+            diag2.metric("HITL rate", _fmt_rate(results.get("hitl_rate")),
+                         help="HITL-corrected rows divided by non-initial-pool processed rows.")
+            diag3.metric("HITL-corrected count", results.get("hitl_count", 0),
+                         help="max(len(exemplar_indices) - initial_pool_size, 0).")
+            diag4.metric("Initial pool size", results.get("initial_pool_size", 0),
+                         help="Configured initial exemplar-pool size.")
+
+            path_dist = results.get("path_distribution") or {}
+            path_df = pd.DataFrame(path_dist).T if path_dist else pd.DataFrame()
+            if not path_df.empty:
+                path_df.index.name = "Inference Path"
+                st.markdown("##### Inference Path Distribution")
+                st.caption("Percentages are computed over the clean evaluated set.")
+                st.dataframe(path_df, use_container_width=True)
             else:
-                st.markdown(f"#### 🎯 Overall Accuracy: **{results['accuracy']:.4f}**")
-                st.caption("Accuracy = correct predictions / total evaluated samples. Most reliable when classes are balanced.")
+                st.caption("Inference path distribution is unavailable.")
 
-                st.markdown("#### 🔢 Confusion Matrix")
-                st.caption("Rows = actual labels (True), Columns = predicted labels (Pred). Diagonal cells are correct predictions; off-diagonal cells are errors.")
+            if results.get("n_evaluated", 0) == 0:
+                st.warning("No clean samples with both ground truth and valid predictions found.")
+            else:
+                st.markdown("#### Overall Metrics")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Accuracy", _fmt_score(results.get("accuracy")),
+                          help="Correct predictions divided by clean evaluated rows.")
+                m2.metric("Macro F1", _fmt_score(results.get("macro_f1")),
+                          help="Unweighted mean F1 across labels.")
+                m3.metric("Weighted F1", _fmt_score(results.get("weighted_f1")),
+                          help="F1 weighted by per-label support.")
+
+                st.markdown("#### Confusion Matrix")
+                st.caption("Rows = actual labels (True), columns = predicted labels (Pred).")
                 st.dataframe(results["confusion_matrix"], use_container_width=True)
 
-                st.markdown("#### 📊 Per-Class Metrics")
+                st.markdown("#### Per-Class Metrics")
                 st.caption(
                     "**Precision**: of all samples predicted as this class, how many actually belong to it.  "
                     "**Recall**: of all samples that actually belong to this class, how many were correctly predicted.  "
-                    "**F1-score**: harmonic mean of precision and recall — the primary metric for imbalanced datasets.  "
-                    "**Support**: number of actual occurrences of this class in the evaluated set."
+                    "**F1-score**: harmonic mean of precision and recall.  "
+                    "**Support**: number of actual occurrences of this class in the clean evaluated set."
                 )
                 per_df = pd.DataFrame(results["per_class"]).T
                 per_df.index.name = "Class"
                 st.dataframe(per_df, use_container_width=True)
 
-                st.markdown("#### 📈 Averages")
+                st.markdown("#### Averages")
                 st.caption(
-                    "**Macro avg**: unweighted mean across all classes — treats each class equally regardless of size, sensitive to rare-class performance.  "
-                    "**Weighted avg**: mean weighted by each class's support — accounts for class imbalance, reflects overall real-world performance."
+                    "**Macro avg**: unweighted mean across all classes.  "
+                    "**Weighted avg**: mean weighted by each class's support."
                 )
                 avg_df = pd.DataFrame(results["averages"]).T
                 avg_df.index.name = "Average Type"
                 st.dataframe(avg_df, use_container_width=True)
 
                 report_lines = [
-                    f"Total rows: {results['total']}",
-                    f"Evaluated: {results['n_evaluated']}",
-                    f"No ground truth: {results['n_no_gt']}",
-                    f"Inference failed: {results['n_infer_fail']}",
-                    f"Accuracy: {results['accuracy']}",
-                    "", "Per-Class Metrics:", per_df.to_csv(),
-                    "", "Averages:", avg_df.to_csv(),
-                    "", "Confusion Matrix:", results["confusion_matrix"].to_csv(),
+                    f"Total rows: {results.get('total')}",
+                    f"Leaked excluded: {results.get('n_leaked_excluded')}",
+                    f"Clean evaluated: {results.get('n_evaluated')}",
+                    f"No ground truth: {results.get('n_no_gt')}",
+                    f"Inference failed: {results.get('n_infer_fail')}",
+                    f"Initial pool size: {results.get('initial_pool_size')}",
+                    f"Total inferred: {results.get('total_inferred')}",
+                    f"HITL count: {results.get('hitl_count')}",
+                    f"HITL rate: {_fmt_rate(results.get('hitl_rate'))}",
+                    f"ECR: {_fmt_rate(results.get('ecr'))}",
+                    f"Macro F1: {results.get('macro_f1')}",
+                    f"Weighted F1: {results.get('weighted_f1')}",
+                    f"Accuracy: {results.get('accuracy')}",
+                    "",
+                    "Inference Path Distribution:",
+                    path_df.to_csv() if not path_df.empty else "N/A",
+                    "",
+                    "Per-Class Metrics:",
+                    per_df.to_csv(),
+                    "",
+                    "Averages:",
+                    avg_df.to_csv(),
+                    "",
+                    "Confusion Matrix:",
+                    results["confusion_matrix"].to_csv(),
                 ]
                 st.download_button(
-                    "⬇️ Download Evaluation Report",
+                    "Download Evaluation Report",
                     data="\n".join(report_lines).encode("utf-8"),
                     file_name=f"{proj_name}_evaluation_report.txt",
                     mime="text/plain",
@@ -716,3 +777,4 @@ if st.session_state.get("init_done") and (ws_path / outfiles_dir / f"{proj_name}
         except Exception as e:
             st.error(f"Evaluation error: {e}")
             st.exception(e)
+

@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 import faiss
 from langgraph.graph import StateGraph, START, END
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
 from .llm_contribs import create_llm
 from .selectors import create_selector
 import threading
@@ -771,62 +771,187 @@ class BaseClassifier(ABC):
 
     def evaluate(self) -> dict:
         """
-        Compute classification metrics by comparing predictions against ground-truth labels.
+        Compute clean classification metrics and diagnostic signals.
 
-        Reads from the backup CSV produced by annotate(). Rows without a ground-truth
-        label are excluded. Works with int, float, or string label types.
+        Classification metrics and ECR exclude rows listed in
+        exemplar_indices.json. HITL rate is computed separately from exemplar
+        pool growth, matching the standalone evaluation protocol.
         """
         backup_path = self.outfiles_dir / f"{self.project_name}_backup.csv"
         if not backup_path.exists():
             raise FileNotFoundError(f"Backup CSV not found: {backup_path}. Run annotate() first.")
 
-        df    = pd.read_csv(backup_path, encoding='utf-8-sig')
+        df = pd.read_csv(backup_path, encoding='utf-8-sig')
         total = len(df)
+        warnings = []
+
+        prediction_col = "predicted_label" if "predicted_label" in df.columns else None
+        if prediction_col is None and "prediction" in df.columns:
+            prediction_col = "prediction"
+        if prediction_col is None:
+            raise KeyError("Backup CSV must contain either 'predicted_label' or 'prediction'.")
+        if self.answer_col not in df.columns:
+            raise KeyError(f"Ground-truth label column not found: {self.answer_col}")
+
+        def normalize_label(value):
+            if pd.isna(value):
+                return ""
+            text = str(value).strip()
+            try:
+                number = float(text)
+                if number == int(number):
+                    return str(int(number))
+            except (ValueError, OverflowError):
+                pass
+            return text
 
         def norm(series):
-            """Normalize a label series to stripped strings without trailing '.0'."""
-            return (series.fillna("")
-                          .astype(str)
-                          .str.strip()
-                          .str.replace(r"\.0$", "", regex=True))
+            return series.map(normalize_label)
 
-        valid = {str(o).strip().replace(".0", "") for o in self.options}
+        def comparable_id(value):
+            if pd.isna(value):
+                return ""
+            text = str(value).strip()
+            try:
+                number = float(text)
+                if number == int(number):
+                    return int(number)
+            except (ValueError, OverflowError):
+                pass
+            return text
 
-        has_gt   = norm(df[self.answer_col]).isin(valid)
-        has_pred = norm(df["predicted_label"]).isin(valid)
+        def flatten_indices(data):
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                flattened = []
+                for value in data.values():
+                    if isinstance(value, list):
+                        flattened.extend(value)
+                    else:
+                        flattened.append(value)
+                return flattened
+            return []
 
-        n_no_gt      = int((~has_gt).sum())
-        n_infer_fail = int((has_gt & ~has_pred).sum())
-        n_evaluated  = int((has_gt & has_pred).sum())
+        exemplar_path = self.outfiles_dir / "exemplar_indices.json"
+        if exemplar_path.exists():
+            with open(exemplar_path, "r", encoding="utf-8") as f:
+                exemplar_data = json.load(f)
+            exemplar_indices = flatten_indices(exemplar_data)
+        else:
+            exemplar_indices = []
+            warnings.append(f"exemplar_indices.json not found at {exemplar_path}; no leaked rows were excluded.")
 
-        print(f"\n{'='*60}\nEvaluation Summary\n{'='*60}")
+        leaked_indices = {comparable_id(idx) for idx in exemplar_indices}
+        leaked_count = len(leaked_indices)
+
+        if "row_index" in df.columns:
+            row_ids = df["row_index"].map(comparable_id)
+        elif "Unnamed: 0" in df.columns:
+            row_ids = df["Unnamed: 0"].map(comparable_id)
+        else:
+            row_ids = pd.Series(df.index, index=df.index).map(comparable_id)
+
+        is_leaked = row_ids.isin(leaked_indices)
+        n_leaked_excluded = int(is_leaked.sum())
+
+        valid = {normalize_label(o) for o in self.options}
+        has_gt = norm(df[self.answer_col]).isin(valid)
+        has_pred = norm(df[prediction_col]).isin(valid)
+        clean_candidate = ~is_leaked
+        clean_mask = clean_candidate & has_gt & has_pred
+
+        n_no_gt = int((clean_candidate & ~has_gt).sum())
+        n_infer_fail = int((clean_candidate & has_gt & ~has_pred).sum())
+        n_evaluated = int(clean_mask.sum())
+
+        initial_pool_size = int(getattr(self, "n_exemplars_pool", 0) or 0)
+        hitl_count = max(leaked_count - initial_pool_size, 0)
+        total_inferred = max(total - initial_pool_size, 0)
+        hitl_rate = hitl_count / total_inferred if total_inferred > 0 else None
+        if total_inferred == 0:
+            warnings.append("Cannot compute HITL rate because total_inferred is 0.")
+
+        print(f"\n{'='*60}\nClean Evaluation Summary\n{'='*60}")
         print(f"  Total rows             : {total}")
+        print(f"  Leaked excluded        : {n_leaked_excluded}")
+        print(f"  Clean evaluated        : {n_evaluated}")
         print(f"  No ground truth        : {n_no_gt}")
         print(f"  Inference failed       : {n_infer_fail}")
-        print(f"  Evaluated              : {n_evaluated}")
+        print(f"  Initial pool size      : {initial_pool_size}")
+        print(f"  HITL-corrected samples : {hitl_count}")
+        print(f"  Total inferred samples : {total_inferred}")
+        if hitl_rate is not None:
+            print(f"  HITL rate              : {hitl_rate * 100:.1f}%")
         print(f"{'='*60}\n")
 
+        labels = sorted(valid)
+        empty_cm = pd.DataFrame(index=[f"True_{l}" for l in labels],
+                                columns=[f"Pred_{l}" for l in labels]).fillna(0).astype(int)
+
+        base_result = {
+            "total": total,
+            "n_leaked_excluded": n_leaked_excluded,
+            "initial_pool_size": initial_pool_size,
+            "hitl_count": hitl_count,
+            "total_inferred": total_inferred,
+            "hitl_rate": hitl_rate,
+            "n_no_gt": n_no_gt,
+            "n_infer_fail": n_infer_fail,
+            "n_evaluated": n_evaluated,
+            "accuracy": None,
+            "macro_f1": None,
+            "weighted_f1": None,
+            "ecr": None,
+            "path_distribution": {},
+            "confusion_matrix": empty_cm,
+            "per_class": {},
+            "averages": {},
+            "labels": labels,
+            "warnings": warnings,
+        }
+
         if n_evaluated == 0:
-            print("No valid samples to evaluate.")
-            return {"total": total, "n_no_gt": n_no_gt,
-                    "n_infer_fail": n_infer_fail, "n_evaluated": n_evaluated}
+            warnings.append("No clean samples with both ground truth and valid predictions found.")
+            print("No valid clean samples to evaluate.")
+            return base_result
 
-        eval_df = df[has_gt & has_pred].copy()
-        y_true  = norm(eval_df[self.answer_col]).tolist()
-        y_pred  = norm(eval_df["predicted_label"]).tolist()
-        labels  = sorted(valid)
+        eval_df = df[clean_mask].copy()
+        y_true = norm(eval_df[self.answer_col]).tolist()
+        y_pred = norm(eval_df[prediction_col]).tolist()
 
-        cm    = confusion_matrix(y_true, y_pred, labels=labels)
-        cm_df = pd.DataFrame(cm, index=[f"True_{l}"  for l in labels],
-                                  columns=[f"Pred_{l}" for l in labels])
+        cm = confusion_matrix(y_true, y_pred, labels=labels)
+        cm_df = pd.DataFrame(cm, index=[f"True_{l}" for l in labels],
+                             columns=[f"Pred_{l}" for l in labels])
         print("Confusion Matrix:\n", cm_df.to_string(), "\n")
 
-        report_str  = classification_report(y_true, y_pred, labels=labels, digits=4)
+        report_str = classification_report(y_true, y_pred, labels=labels, digits=4, zero_division=0)
         report_dict = classification_report(y_true, y_pred, labels=labels,
                                             output_dict=True, zero_division=0)
         print("Classification Report:\n", report_str)
 
-        accuracy  = accuracy_score(y_true, y_pred)
+        accuracy = accuracy_score(y_true, y_pred)
+        macro_f1 = f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)
+        weighted_f1 = f1_score(y_true, y_pred, labels=labels, average="weighted", zero_division=0)
+
+        path_distribution = {}
+        ecr = None
+        if "inference_path" in eval_df.columns:
+            paths = eval_df["inference_path"].fillna("UNKNOWN").astype(str).str.strip()
+            paths = paths.replace("", "UNKNOWN")
+            path_counts = paths.value_counts()
+            for path, count in path_counts.items():
+                path_distribution[path] = {
+                    "count": int(count),
+                    "percent": round(float(count / n_evaluated * 100), 1),
+                }
+            ecr = int(path_counts.get("L3_Expert_Consensus", 0)) / n_evaluated
+        else:
+            warnings.append("inference_path column not found; ECR and path distribution are unavailable.")
+
+        if ecr is not None:
+            print(f"Expert Call Rate (ECR): {ecr * 100:.1f}%")
+
         per_class = {
             lbl: {k: (round(v, 4) if isinstance(v, float) else int(v))
                   for k, v in report_dict.get(lbl, {}).items()}
@@ -839,17 +964,17 @@ class BaseClassifier(ABC):
             if avg in report_dict
         }
 
-        return {
-            "total":            total,
-            "n_no_gt":          n_no_gt,
-            "n_infer_fail":     n_infer_fail,
-            "n_evaluated":      n_evaluated,
-            "accuracy":         round(accuracy, 4),
+        base_result.update({
+            "accuracy": round(accuracy, 4),
+            "macro_f1": round(macro_f1, 4),
+            "weighted_f1": round(weighted_f1, 4),
+            "ecr": ecr,
+            "path_distribution": path_distribution,
             "confusion_matrix": cm_df,
-            "per_class":        per_class,
-            "averages":         averages,
-            "labels":           labels,
-        }
+            "per_class": per_class,
+            "averages": averages,
+        })
+        return base_result
 
     def _post_init(self):
         pass
