@@ -103,6 +103,7 @@ class MultiModalClassifier(BaseClassifier):
         if query_img and Path(query_img).exists():
             b64_query = get_base64_image(query_img)
             detail = "high" if is_expert else "low"
+            # detail = "high"
             user_payload.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64_query}",

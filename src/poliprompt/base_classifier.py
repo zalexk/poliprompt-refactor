@@ -100,8 +100,8 @@ class BaseClassifier(ABC):
         self.options = [str(opt) for opt in user.get('options', [])]
         if not self.options:
             raise ValueError("'options' must be a non-empty list in the config.")
-        if self.k_shots <= 0:
-            raise ValueError(f"'k_shots' must be a positive integer, got {self.k_shots}.")
+        if self.k_shots < 0:
+            raise ValueError(f"'k_shots' must be a non-negative integer, got {self.k_shots}.")
 
         self.testing = user.get('testing', False)
         self.testing_size = user.get('testing_size', 128)
@@ -193,11 +193,12 @@ class BaseClassifier(ABC):
         if self.observability_enabled and self.observability_provider == "langfuse" and pk and sk:
             try:
                 from langfuse.langchain import CallbackHandler
-                self.lf_handler = CallbackHandler(
-                    public_key=pk,
-                    secret_key=sk,
-                    host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-                )
+                # self.lf_handler = CallbackHandler(
+                #     public_key=pk,
+                #     secret_key=sk,
+                #     host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+                # )
+                self.lf_handler = CallbackHandler()
                 logger.info("Langfuse initialized successfully.")
             except Exception as e:
                 logger.warning(f"Langfuse init failed: {e}. Running without observability.")
@@ -220,6 +221,7 @@ class BaseClassifier(ABC):
         print("--- Phase 1: Building Few-Shot Exemplar Pool ---")
         start_time = time.time()
         self.df = utils.load_and_validate_data(self.data_path, self.text_col, self.answer_col, self.image_col)
+        self.df[self.answer_col] = self.df[self.answer_col].astype(str)
         docs = self._convert_df_to_docs(self.df)
 
         from .llm_contribs import get_universal_embeddings
@@ -526,7 +528,7 @@ class BaseClassifier(ABC):
                 user_input   = input(f"Definitive Label ({options_hint}): ").strip()
 
             # Update the in-memory label for this row
-            self.df.at[idx, self.answer_col] = user_input
+            self.df.at[idx, self.answer_col] = str(user_input)
 
             # Inject the human-labeled sample into the exemplar pool
             if idx not in self.indices:
@@ -693,6 +695,10 @@ class BaseClassifier(ABC):
 
         self._setup_rag_resources(mandatory=True)
         self._ensure_data_loaded()
+        if not self.enhanced_rules and (self.outfiles_dir / "enhanced_rules.txt").exists():
+            self.enhanced_rules = (self.outfiles_dir / "enhanced_rules.txt").read_text(encoding='utf-8')
+            
+        self.df[self.answer_col] = self.df[self.answer_col].astype(str)
 
         db_path = self.outfiles_dir / "poliprompt_checkpoints.db"
         conn    = sqlite3.connect(str(db_path), check_same_thread=False)

@@ -319,7 +319,7 @@ with st.expander("⚙️ **user_settings**", expanded=True):
 
     ua, ub, uc, ud = st.columns(4)
     lambda_param = ua.slider("lambda_param", 0.0, 1.0, float(usr.get("lambda_param", 0.5)), 0.05, help="Balance between diversity and relevance in few-shot retrieval. 0 = max diversity, 1 = max similarity. Start with 0.5.")
-    k_shots      = ub.number_input("k_shots",      1,  20,  int(usr.get("k_shots",      3)), help="Number of few-shot examples retrieved per inference. Recommended: 3~5. More examples increase token cost.")
+    k_shots      = ub.number_input("k_shots",      0,  20,  int(usr.get("k_shots",      3)), help="Number of few-shot examples retrieved per inference. Recommended: 3~5. More examples increase token cost.")
     testing      = uc.toggle("testing",             value=bool(usr.get("testing",      False)), help="When enabled, only the first testing_size rows are processed. Useful for quickly validating the pipeline.")
     testing_size = ud.number_input("testing_size", 8, 2048, int(usr.get("testing_size", 128)), disabled=not testing, help="Number of samples to process in testing mode.")
 
@@ -625,7 +625,7 @@ if st.session_state.get("hitl_pending"):
         chosen = st.radio("Select label:", opts, horizontal=True, key=f"hitl_radio_{idx}")
 
         if st.button("✅  Confirm Label", type="primary", key=f"hitl_confirm_{idx}"):
-            hitl_res.put(chosen)
+            hitl_res.put(str(chosen))
             st.session_state.pop("hitl_pending", None)
             st.rerun()
 
