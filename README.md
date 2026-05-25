@@ -1,17 +1,4 @@
 
-<p align="center">
-  <img src="https://github.com/geshijoker/PoliPrompt/blob/main/poliprompt_logo.png" width="800" />
-</p>
-
----
-
-[![PyPI - Python](https://img.shields.io/badge/python-v3.10+-blue.svg)](https://pypi.org/project/PoliPrompt/)
-[![Build](https://img.shields.io/github/actions/workflow/status/geshijoker/PoliPrompt/ci.yaml?branch=main)](https://github.com/geshijoker/PoliPrompt/actions)
-[![docs](https://img.shields.io/badge/docs-Passing-green.svg)](https://poliprompt-tutorial.readthedocs.io/en/latest/)
-[![PyPI - PyPi](https://img.shields.io/pypi/v/PoliPrompt)](https://pypi.org/project/poliprompt/)
-[![PyPI - License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/geshijoker/PoliPrompt/blob/main/LICENSE)
-[![arXiv](https://img.shields.io/badge/arXiv-2409.01466-<COLOR>.svg)](https://arxiv.org/pdf/2409.01466)
-
 # PoliPrompt: Multimodal Agentic Framework
 
 PoliPrompt is a Python framework for automated text and multimodal classification using a three-layer LLM inference pipeline with Human-in-the-Loop (HITL) active learning. It was originally designed for political science research and is general enough for any labeling task that benefits from few-shot learning.
@@ -63,7 +50,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # 2. Clone the repository
-git clone -b multimodal-feature-refinement https://github.com/cora0413/PoliPrompt-Refactor.git
+git clone https://anonymous.4open.science/r/PoliPrompt-Refactor-848E.git
 cd PoliPrompt-Refactor
 
 # 3. Install dependencies — choose what you need:
@@ -180,18 +167,11 @@ A complete end-to-end example (both text and multimodal) is available in
 
 | Section | Contents |
 |---|---|
-| [Getting Started](docs/getting-started/introduction.md) | What PoliPrompt is and when to use it |
-| [Quick Start](docs/getting-started/quickstart.md) | Step-by-step installation and first run |
-| [API Reference](docs/api/reference.md) | Public methods of `TextClassifier` and `MultiModalClassifier` |
-| [Configuration](docs/configuration/configuration.md) | All `config.yaml` fields explained |
-| [Architecture](docs/concepts/architecture.md) | Inference pipeline and component design |
-| [Changelog](docs/about/changelog.md) | Version history |
+| Getting Started | What PoliPrompt is and when to use it |
+| Quick Start | Step-by-step installation and first run |
+| API Reference | Public methods of TextClassifier and MultiModalClassifier |
+| Configuration | All config.yaml fields explained |
+| Architecture | Inference pipeline and component design |
+| Changelog | Version history |
 
-## Citation
 
-```bibtex
-@article{poliprompt2024,
-  title={PoliPrompt: A High-Performance Cost-Effective LLM-Based Text Classification Framework for Political Science},
-  url={https://arxiv.org/abs/2409.01466}
-}
-```
