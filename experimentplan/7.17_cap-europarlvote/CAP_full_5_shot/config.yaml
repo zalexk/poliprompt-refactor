@@ -1,0 +1,52 @@
+project:
+  name: MyProject
+  version: v1
+  modality: text
+  work_station: D:\Desktop\RA\poliprompt\dataset\CAP\full_5_shot
+  data_path: CAP_full.csv
+  image_dir: .
+  outfiles_dir: outfiles
+column_mapping:
+  text_col: description
+  image_col: None
+  answer_col: majortopic
+user_settings:
+  lambda_param: 0.5
+  k_shots: 5
+  options:
+  - '1'
+  - '2'
+  - '3'
+  - '4'
+  - '5'
+  - '6'
+  - '7'
+  - '8'
+  - '9'
+  - '10'
+  - '12'
+  - '13'
+  - '14'
+  - '15'
+  - '16'
+  - '17'
+  - '18'
+  - '19'
+  - '20'
+  - '21'
+  testing: false
+  testing_size: 128
+models:
+  embedding_llm: text-embedding-3-small
+  primary_llm: gpt-4o-mini
+  secondary_llm: qwen-turbo
+  expert_llm: gpt-4o
+retrieval:
+  n_exemplars_pool: 300
+parallel:
+  embedding_workers: 8
+  inference_workers: 3
+  embedding_batch_size: 5
+observability:
+  enabled: true
+  provider: langfuse

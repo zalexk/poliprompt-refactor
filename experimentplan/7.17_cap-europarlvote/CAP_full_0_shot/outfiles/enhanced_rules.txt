@@ -1,0 +1,329 @@
+1. **Focus on Fiscal Policy and Taxation**: Bills that amend the Internal Revenue Code, address tax policy (e.g., exemptions, credits, estate tax adjustments), or involve fiscal measures like government debt management or budget reconciliation fit under Macroeconomics. These bills center on the government's financial systems and economic stabilization.
+
+2. **Budgetary Matters**: Bills that deal with budget procedures, fiscal year reconciliation, or economic stabilization acts are classified under Macroeconomics. The focus is on overarching financial management rather than specific agency operations or subject matter.
+
+3. **Economic Stabilization**: Bills aimed at stabilizing the economy, managing federal debt obligations, or addressing monetary policy are categorized under Macroeconomics. These bills focus on the broader economic framework rather than commerce or trade.
+
+4. **Distinction from Commerce (15)**: If the bill focuses on fiscal policy, taxation, or budgetary matters rather than business regulation, trade practices, or industry-specific policies, it belongs to Macroeconomics.
+
+5. **Distinction from Transportation (10)**: Bills that focus on transportation systems or infrastructure enhancements are classified under Transportation, not Macroeconomics, unless they directly address fiscal policy related to transportation funding.
+
+6. **Distinction from Government Operations (20)**: Bills about the administration of government agencies or appropriations for their operations are classified under Government Operations, not Macroeconomics, unless they focus on fiscal policy or budgetary reconciliation.
+
+7. **Distinction from Foreign Trade (18)**: Bills addressing tariffs, trade agreements, or international commerce are classified under Foreign Trade, not Macroeconomics, unless they focus on fiscal policy or taxation related to trade.
+
+8. **Primary Focus on Tax Code Amendments**: Bills that amend tax laws, including provisions for income tax, estate tax, or charitable exemptions, are classified under Macroeconomics due to their direct impact on fiscal policy.
+
+1. **Focus on Individual Rights and Freedoms**: Category 2 (Civil Rights) applies to bills that address the protection, enforcement, or expansion of individual rights and freedoms, including issues of discrimination, segregation, privacy, and voting rights.
+
+2. **Discrimination and Equality**: Bills that prohibit or address discrimination based on race, age, gender, religion, disability, or other personal characteristics fit under Civil Rights. This includes workplace discrimination, credit access, and affirmative action programs.
+
+3. **Privacy and Personal Data**: Bills that protect individual privacy rights, such as medical records confidentiality or personal data protection, fall under Civil Rights if the focus is on safeguarding individual freedoms rather than broader health or technology concerns.
+
+4. **Voting Rights and Electoral Equality**: Bills that amend voting rights legislation, eliminate discriminatory practices like poll taxes, or enhance desegregation in elections are classified under Civil Rights.
+
+5. **Marginalized Groups and Self-Expression**: Bills that protect the rights of marginalized groups (e.g., the blind, religious minorities) or address their ability to express themselves fit under Civil Rights.
+
+6. **Symbolic Protections Linked to Rights**: Bills that protect national symbols (e.g., the flag) in ways tied to civil rights and identity, rather than general law enforcement or government operations, belong in this category.
+
+7. **Distinction from Other Categories**:
+   - **Law & Crime (12)**: Civil Rights focuses on individual freedoms and protections, while Law & Crime addresses criminal justice processes and enforcement.
+   - **Labor (5)**: Civil Rights addresses discrimination in employment, while Labor focuses on broader employment conditions and labor relations.
+   - **Government Operations (20)**: Civil Rights pertains to individual rights, while Government Operations focuses on the administration of government itself.
+   - **Health (3)**: Civil Rights applies when privacy or rights are the focus, while Health applies when the primary concern is medical or health-related policy.
+   - **Technology (17)**: Civil Rights applies when the focus is on personal data protection as a rights issue, while Technology applies when the focus is on technological systems or innovation.
+
+1. **Primary Focus on Healthcare Services**: Bills that directly address healthcare services, access, or delivery, such as Medicare, Medicaid, or public health initiatives, should be classified as category 3 (Health). This includes amendments to healthcare programs, payment provisions, or service expansions.
+
+2. **Health Insurance and Financial Aspects**: Bills that involve the financial aspects of health insurance, such as tax exemptions for health insurance companies or changes to payment rules under Medicare/Medicaid, fit category 3 (Health) as they directly impact healthcare coverage and affordability.
+
+3. **Public Health Policy**: Bills that focus on public health initiatives, such as disease prevention, testing, or health-related regulations (e.g., AIDS testing policies), belong to category 3 (Health). These are distinct from broader social welfare or civil rights issues.
+
+4. **Healthcare Workforce and Education**: Bills that address the education, training, or support of health professionals, such as grants for medical teaching facilities or training programs, fit category 3 (Health). These are distinct from general education policies (category 6).
+
+5. **Overlap with Social Welfare**: If a bill touches on social welfare but its primary focus is on healthcare services (e.g., nursing services under Medicare/Medicaid), it should be classified as category 3 (Health) rather than category 13 (Social Welfare).
+
+6. **Veterans' Health Services**: Bills that focus on medical services or hospital care for veterans fall under category 3 (Health), as they pertain to healthcare delivery, rather than broader veterans' benefits or labor issues.
+
+7. **Nutrition and Health**: Bills that address nutrition counseling or related services under healthcare programs (e.g., Medicare/Medicaid) are classified as category 3 (Health), as they directly relate to health services rather than education or labor.
+
+8. **Distinction from Other Categories**:
+   - **Not Macroeconomics (1)**: If the bill focuses on healthcare services or insurance rather than broader fiscal or monetary policy.
+   - **Not Domestic Commerce (15)**: If the bill pertains to health insurance or healthcare delivery rather than general business or trade regulation.
+   - **Not Social Welfare (13)**: If the bill's primary focus is healthcare services rather than broader social support programs.
+   - **Not Education (6)**: If the bill focuses on medical education or training for health professionals rather than general education policies.
+
+1. **Primary Focus on Agricultural Commodities and Practices**: Bills that directly address agricultural products, standards, or practices—such as crop production, livestock management, grain standards, or dairy stabilization—should be classified as category 4. This includes amendments to agricultural legislation or regulations specific to agricultural commodities.
+
+2. **Agricultural Policy and Programs**: Bills that focus on agricultural policies, such as farm price stabilization, crop insurance, payment limitations for farm programs, or financial assistance for conservation practices tied to agriculture, fall under category 4.
+
+3. **Regulation of Agricultural Imports and Exports**: Bills that regulate import quotas, labeling requirements, or inspection standards for agricultural products (e.g., meat, grains) are classified as category 4, as they pertain to agricultural commodities rather than broader trade or commerce policies.
+
+4. **Intersection with Other Topics**: When agriculture intersects with other areas (e.g., health, conservation, taxation), classify as category 4 if the focus is on agricultural-specific impacts or practices. For example:
+   - Food safety regulations tied to agricultural chemicals or products.
+   - Tax exemptions or benefits specifically for agricultural operations (e.g., agricultural aircraft).
+   - Conservation practices directly tied to agricultural land or commodities.
+
+5. **Funding and Appropriations for Agricultural Programs**: Bills that allocate funding for agriculture-related programs, agencies, or initiatives (e.g., rural development, food safety under the FDA) are classified as category 4, distinguishing them from general government operations.
+
+6. **Exclusions**: Avoid classifying bills as category 4 if the focus is broader than agriculture:
+   - If the bill primarily addresses ecological issues without an agricultural context, classify as Environment (7).
+   - If the bill focuses on trade agreements or tariffs beyond agricultural products, classify as Foreign Trade (18).
+   - If the bill pertains to general business regulations or commerce unrelated to agriculture, classify as Domestic Commerce (15).
+
+{"summary_rules": "1. **Primary Focus on Workers' Rights and Benefits**: Bills that directly address issues related to workers' rights, benefits, or compensation (e.g., retirement plans, unemployment benefits, minimum wage) fit category 5. 2. **Labor Standards and Regulations**: Bills that amend or establish labor standards, such as the Fair Labor Standards Act or National Labor Relations Act, are classified under category 5. 3. **Employment-Related Expenses**: Bills addressing tax deductions or exclusions for expenses directly tied to employment (e.g., moving or transportation expenses) fall under category 5, as they pertain to labor-related costs. 4. **Labor-Management Relations**: Bills focused on improving or regulating labor-management relations, including within federal services, are classified as category 5. 5. **Unemployment and Compensation Programs**: Bills that reform or improve unemployment compensation, employment services, or workers' compensation programs fit category 5. 6. **Overlap with Other Topics**: If a bill touches on other topics (e.g., Social Welfare, Health, Education) but the primary focus is on labor-related issues, it should still be classified under category 5. 7. **Exclusions**: Bills primarily focused on broader economic policies (Macroeconomics), general tax issues (Domestic Commerce), or non-labor-related social welfare programs (Social Welfare) should not be classified as category 5."}
+
+1. **Primary Focus on Educational Policy**: The bill must directly address educational standards, programs, funding, governance, or infrastructure. This includes amendments to existing education laws, creation of new educational policies, or initiatives aimed at improving access to education.
+
+2. **Educational Resources and Services**: Bills that promote or enhance educational resources, such as libraries, community schools, or vocational training, fit under category 6. The focus must be on improving educational opportunities rather than broader social or economic impacts.
+
+3. **Financial Assistance for Education**: Bills that provide financial support specifically for education, such as student loans, grants, or tax credits for educational expenses, fall under category 6. These must be directly tied to education rather than broader fiscal or social welfare policies.
+
+4. **Education for Specific Groups**: Bills that address educational benefits for specific demographics, such as veterans, senior citizens, or surviving spouses, fit under category 6 if the primary focus is on education rather than other forms of support (e.g., labor or social welfare).
+
+5. **Interstate or Federal Educational Governance**: Bills that involve governance or collaboration between states or federal agencies specifically related to education, such as interstate compacts for schools, are classified under category 6.
+
+6. **Distinction from Other Categories**:
+   - **Macroeconomics (1)**: If the bill involves broader fiscal policy or tax code changes unrelated to education, it fits under macroeconomics.
+   - **Social Welfare (13)**: If the bill focuses on general welfare programs rather than education-specific initiatives, it fits under social welfare.
+   - **Labor (5)**: If the bill focuses on workforce training or employment issues without a direct educational component, it fits under labor.
+   - **Defense (16)**: If the bill focuses primarily on military operations or benefits unrelated to education, it fits under defense.
+
+7. **Dual-Topic Bills**: If a bill touches on multiple topics (e.g., education and defense), it fits under category 6 if the primary legislative action is educational in nature. Secondary topics are noted but do not override the primary focus.
+
+1. **Primary Focus on Environmental Conservation and Protection**: Bills that directly address conservation efforts, wildlife protection, or environmental sustainability fit category 7. This includes actions like amending conservation acts, protecting threatened species, or establishing conservation programs.
+
+2. **Pollution and Waste Management**: Bills dealing with pollution control (e.g., air, water, or soil), waste management (e.g., hazardous waste, solid waste disposal), or environmental cleanup efforts are classified under category 7.
+
+3. **Environmental Regulation and Legislation**: Bills that amend or create environmental laws, such as the Clean Air Act or Solid Waste Disposal Act, fall under category 7 if their primary focus is environmental protection rather than broader government operations.
+
+4. **Water Resources and Management**: Bills addressing water quality, purification, reuse, or atmospheric water yield research fit category 7, as they pertain to environmental concerns rather than agriculture or health.
+
+5. **Environmental Research and Development**: Bills that consolidate or improve environmental research efforts, establish institutes focused on environmental issues, or fund scientific studies related to environmental sustainability are classified under category 7.
+
+6. **Intersection with Other Topics**: When environmental concerns intersect with other areas (e.g., agriculture, transportation, energy, health), category 7 applies if the primary focus is environmental protection or regulation. For example:
+   - **Agriculture**: Conservation programs for farmland fit category 7 if the focus is environmental sustainability rather than agricultural production.
+   - **Transportation**: Noise abatement related to aircraft operations fits category 7 if the focus is environmental impact rather than transportation policy.
+   - **Energy**: Amendments addressing air quality and pollution control related to fuel supply fit category 7 if the focus is environmental regulation rather than energy production.
+
+7. **Exclusions**: Bills that primarily focus on public lands management (e.g., establishing stewardship areas or recreation zones) are classified under category 21 (Public Lands), even if they touch on conservation. Similarly, bills focused on rural infrastructure development (e.g., water and sewer grants) are classified under category 4 (Agriculture) if the focus is rural development rather than environmental protection.
+
+By applying these rules, category 7 can be clearly distinguished from other policy topics.
+
+1. **Primary Focus on Energy Policy**: Category 8 applies when the bill directly addresses energy production, regulation, conservation, infrastructure, or resources (e.g., oil, gas, nuclear, solar, hydroelectric).
+
+2. **Renewable Energy and Conservation**: Bills promoting renewable energy sources, energy efficiency, or conservation measures fall under Category 8, as long as the focus is on energy rather than broader environmental concerns.
+
+3. **Energy Infrastructure and Access**: Bills related to the development, operation, or financing of energy infrastructure (e.g., rural electrification, hydroelectric powerplants) are classified as Category 8.
+
+4. **Energy Resource Regulation**: Bills regulating energy resources (e.g., petroleum, natural gas, atomic energy) or addressing royalty payments, allocation, or taxation specific to energy fall under Category 8.
+
+5. **Energy Research and Development**: Bills supporting research and development of energy technologies (e.g., solar energy, nonnuclear energy) are classified as Category 8.
+
+6. **Energy-Specific Amendments**: Amendments to laws or acts directly tied to energy policy (e.g., Natural Gas Act, Atomic Energy Act, Tennessee Valley Authority Act) fit Category 8.
+
+7. **Distinction from Other Categories**:
+   - **Environment (7)**: Use Category 8 if the focus is on energy production or regulation, even if environmental concerns are mentioned. Use Category 7 if the focus is broader environmental protection or conservation unrelated to energy.
+   - **Domestic Commerce (15)**: Use Category 8 if the bill addresses energy-related taxation or market surveys specific to energy resources. Use Category 15 if the focus is on general business regulation or trade.
+   - **Macroeconomics (1)**: Use Category 8 if the bill addresses energy-specific fiscal measures (e.g., tax credits for solar energy). Use Category 1 if the focus is on broader economic policy or fiscal matters.
+   - **Defense (16)** or **Technology (17)**: Use Category 8 if the focus is on energy regulation or production, even if related to defense or technology. Use Categories 16 or 17 if the focus shifts to military applications or technological innovation unrelated to energy policy.
+
+1. **Primary Focus on Immigration Policy**: The bill must directly address immigration laws, policies, or regulations, such as amendments to the Immigration and Nationality Act, quota systems, visa issuance, or refugee admission.
+
+2. **Legal Status and Entry of Non-Citizens**: Bills that focus on the legal status, naturalization, adjustment of status, or entry/parole of non-citizens (e.g., refugees, relatives of U.S. citizens, alien students) fall under category 9.
+
+3. **Immigration Enforcement**: Bills involving enforcement of immigration laws, such as requiring law enforcement to check immigration status or report cases to federal authorities, are classified as category 9.
+
+4. **Individual Immigration Relief**: Bills providing relief for specific individuals in immigration-related cases are categorized under 9, as they pertain to immigration status rather than broader civil rights or social welfare issues.
+
+5. **Distinction from Other Topics**:
+   - **Civil Rights (2)**: Focuses on broader anti-discrimination or equality issues, not immigration-specific laws.
+   - **Labor (5)**: Focuses on worker rights and conditions, not visa issuance or immigration status for employment.
+   - **Social Welfare (13)**: Focuses on broader welfare programs, not immigration-specific relief or status adjustments.
+   - **Defense (16)**: Focuses on military operations, not naturalization of non-citizen military personnel.
+   - **International Affairs (19)**: Focuses on diplomacy or foreign aid, not refugee admission or immigration security.
+
+6. **Refugee and Security Policies**: Bills addressing refugee admission, security requirements, or specific refugee groups (e.g., Syrians, Iraqis) are classified under category 9, as they pertain to immigration policy rather than broader international relations.
+
+7. **Employment-Based Immigration**: Bills facilitating nonimmigrant visas for employment purposes are classified under category 9, as they focus on immigration status rather than labor rights or conditions.
+
+1. **Primary Focus on Transportation Infrastructure**: Bills that involve the construction, maintenance, rehabilitation, or improvement of transportation infrastructure (e.g., highways, bridges, canals, railroads, shipping facilities) fit under category 10. The focus must be on physical infrastructure related to transportation rather than broader economic or environmental concerns.
+
+2. **Transportation System Development and Regulation**: Bills that address the development, authorization, or regulation of transportation systems (e.g., mass transit, aviation, maritime trade, coastwise trade) fall under category 10. This includes amendments to transportation-related laws or codes.
+
+3. **Safety and Security in Transportation**: Bills that focus on safety standards, security measures, or regulations specific to transportation modes (e.g., railroads, aviation, shipping) are classified under category 10. The emphasis must be on transportation safety rather than labor or defense policy.
+
+4. **Federal Transportation Funding and Programs**: Bills that authorize or allocate federal funds for transportation-related projects or programs (e.g., highway funds, road construction for national defense) fit under category 10. The primary focus must be on transportation funding rather than broader government operations or defense.
+
+5. **Environmental Concerns Linked to Transportation**: Bills that address environmental issues specifically tied to transportation infrastructure (e.g., use of recyclable materials in highway construction, low-emission vehicle purchases with highway funds) are classified under category 10. The focus must remain on transportation infrastructure rather than broader environmental policy.
+
+6. **Distinction from Commerce and Trade**: Bills involving transportation regulations related to commerce or trade (e.g., passenger ticket sales, foreign vessel transportation) fit under category 10 if the primary focus is on transportation systems rather than broader trade agreements or business regulations.
+
+7. **Public Works and Economic Development Related to Transportation**: Bills that involve public works projects or economic development initiatives directly tied to transportation infrastructure (e.g., public works authorizations for transportation) are classified under category 10. Broader economic policies or domestic commerce initiatives are excluded.
+
+By applying these rules, category 10 can be clearly distinguished from other policy topics such as Domestic Commerce (15), Energy (8), Environment (7), Defense (16), and Government Operations (20).
+
+1. **Focus on Legal and Criminal Justice Systems**: Category 12 (Law & Crime) applies to bills that directly address legal frameworks, criminal justice, law enforcement, or judicial processes. This includes amendments to legal codes, penalties, jurisdiction, or qualifications for judges.
+
+2. **Law Enforcement and Public Safety**: Bills that involve grants, programs, or regulations specifically aimed at supporting law enforcement, crime prevention, or public safety fall under this category. Examples include funding for law enforcement equipment or initiatives to prevent crimes like child abduction.
+
+3. **Criminal Penalties and Regulations**: Bills that amend or establish penalties for criminal activities, such as felonies involving firearms or employer misconduct, are classified under Law & Crime. These focus on the legal consequences of criminal behavior.
+
+4. **Judicial System Operations**: Bills that address the structure, jurisdiction, or authority of courts, such as appointing judges or limiting court powers, fit within this category. These pertain to the administration and functioning of the judicial branch.
+
+5. **Legal Provisions Related to Specific Issues**: Bills that address legal aspects of specific topics, such as cultural property protection or background checks for firearm purchases, are categorized under Law & Crime if they focus on legal enforcement or criminal justice rather than broader policy areas like Civil Rights or Public Safety.
+
+6. **Distinction from Other Categories**:
+   - **Civil Rights (2)**: Focuses on equality and rights protections, not legal enforcement or penalties.
+   - **Social Welfare (13)**: Addresses assistance programs and welfare, not criminal justice.
+   - **Government Operations (20)**: Focuses on administrative functions of government, not judicial or legal systems.
+   - **Defense (16)**: Relates to national security and military, not domestic law enforcement.
+   - **Public Safety (7)**: Focuses on environmental or health-related safety, not criminal justice.
+
+By adhering to these rules, bills can be accurately classified under category 12 when their primary focus is on legal systems, criminal justice, or law enforcement.
+
+1. **Focus on Social Security Programs**: Bills that amend the Social Security Act, including changes to benefits, eligibility requirements, income limits, retirement age, or disability insurance, fit category 13. These bills directly address social insurance programs rather than broader economic or labor issues.
+
+2. **Support for Vulnerable Populations**: Bills that provide financial assistance, services, or programs targeting specific demographics (e.g., older Americans, individuals with disabilities, low-income families) align with Social Welfare. These bills aim to improve independence, reduce institutional care costs, or enhance quality of life.
+
+3. **Funding and Appropriations for Social Services**: Bills that authorize appropriations or reauthorize block grants for social services programs, such as child care access or temporary assistance for needy families, fit category 13. These bills focus on social service infrastructure rather than education or health-specific initiatives.
+
+4. **Intersection with Health or Education**: Bills that address welfare-related initiatives, such as nutrition education programs for children, fit category 13 when the primary focus is on improving welfare outcomes rather than solely addressing health or education.
+
+5. **Tax Relief for Targeted Groups**: Bills providing tax relief to specific vulnerable groups (e.g., older Americans, low-income individuals) fit category 13 when the focus is on financial assistance rather than general economic policy or commerce.
+
+6. **Rehabilitation and Support Services**: Bills evaluating or improving rehabilitation services for individuals with disabilities fit category 13 when the focus is on enhancing independence and welfare rather than medical treatment or labor-related issues.
+
+1. **Primary Focus on Housing Policy**: Assign category 14 if the bill directly addresses housing-related legislation, including home ownership, mortgage systems, housing finance, or housing assistance programs. This includes amendments to housing-specific acts like the National Housing Act or the Housing Act.
+
+2. **Community Development Connection**: Include bills that focus on housing and community development initiatives, such as redevelopment efforts or regional development impacting housing.
+
+3. **Financial Assistance for Housing**: Bills that provide financial support or credit availability specifically for housing purposes, particularly for low- or moderate-income families, fit category 14.
+
+4. **Housing and Related Areas**: If the bill addresses housing provisions in conjunction with other areas (e.g., Defense, Social Welfare), prioritize category 14 if the primary legislative focus is on housing rather than the secondary area.
+
+5. **Exclusions**: Do not assign category 14 if the bill primarily focuses on broader economic, social welfare, or commerce issues without a direct housing component. Similarly, exclude bills focused solely on public lands or agriculture unless housing is explicitly tied to the legislative focus.
+
+6. **Amendments to Housing-Specific Laws**: Bills amending housing-related laws or acts (e.g., National Housing Act, Area Redevelopment Act) should be classified under category 14, as they directly pertain to housing policy.
+
+7. **Regional and Rural Development with Housing Focus**: Assign category 14 to bills that address rural or regional development financing if housing is a significant component of the legislative focus.
+
+8. **Defense-Related Housing**: If the bill addresses housing provisions for Armed Forces personnel or essential civilian employees, classify it under category 14, as the housing aspect takes precedence over defense.
+
+By following these rules, category 14 can be clearly distinguished from other policy topics.
+
+1. **Focus on Business Policy and Regulations**: Category 15 (Domestic Commerce) applies to bills that regulate business practices, financial institutions, trade policies, or consumer protections. This includes amendments to acts like the Small Business Act, Federal Trade Commission Act, or Federal Credit Union Act.
+
+2. **Consumer Protection and Trade Regulation**: Bills establishing agencies or policies to protect consumer rights, regulate trade practices, or address business operations fall under Domestic Commerce. This includes measures affecting consumer reporting, exclusive territorial arrangements, or metric system conversion in trade.
+
+3. **Financial Institutions and Banking**: Bills that amend regulations governing financial institutions, such as credit unions or banking operations, are classified under Domestic Commerce. These focus on the commerce-related aspects of financial systems rather than broader fiscal or monetary policy.
+
+4. **Tax Policy Specific to Business Operations**: If a bill amends tax codes or policies specifically to support businesses or investment, it fits Domestic Commerce. Broader fiscal or monetary tax policies would fall under Macroeconomics.
+
+5. **Intersection with Other Topics**: When a bill touches on multiple areas (e.g., Agriculture, Labor, Health), it fits Domestic Commerce if the primary focus is on business regulations or trade practices rather than the broader subject matter of the intersecting topic.
+
+6. **Exclusions**: 
+   - Do not classify bills under Domestic Commerce if they primarily address fiscal/monetary policy (Macroeconomics), government administration (Government Operations), or broader labor issues unrelated to business practices (Labor). 
+   - Avoid using Domestic Commerce for bills focused on international trade agreements or tariffs (Foreign Trade).
+
+1. **Primary Focus on Military Service or Veterans**: Bills that directly address issues related to military personnel, veterans, or their benefits fall under category 16. This includes amendments to veterans' benefits acts, military retirement pay, incentive pay for uniformed services, or recognition of military service.
+
+2. **Veterans' Benefits and Recognition**: Legislation that pertains to veterans' benefits, such as pensions, insurance programs, or service-related compensation, is classified as category 16 if the focus is on their military service or recognition as veterans. If the focus shifts to broader financial support or social welfare, it may fit category 13 instead.
+
+3. **Defense-Related Compensation**: Bills addressing compensation, pay, or benefits specifically tied to military service or personnel are classified under category 16. This excludes general labor or social welfare issues.
+
+4. **Health Issues Linked to Military Service**: If a bill addresses health concerns specifically tied to military service (e.g., service-related disabilities or diseases), it fits category 16. General health issues unrelated to military service fall under category 3.
+
+5. **Veterans' Organizations and Associations**: Legislation involving the incorporation, recognition, or regulation of veterans' groups or associations is classified under category 16, as it pertains to military service and veterans' recognition.
+
+6. **Exclusions**: 
+   - Bills focused on general social welfare (e.g., pensions for widows of veterans) are classified under category 13.
+   - Bills focused on legal jurisdiction or judicial processes are classified under category 12.
+   - Bills addressing government administration or operations unrelated to defense are classified under category 20.
+
+By applying these rules, category 16 can be clearly distinguished from other policy topics.
+
+1. **Primary Focus on Communication Technologies**: Bills that involve amendments to the Communications Act, regulations on broadcasting, telecommunication services, or broadband deployment fall under category 17. These are technological concerns rather than commerce (15) or government operations (20).
+
+2. **Cybersecurity and Digital Protection**: Bills addressing cyberterrorism, cybercrime, or protection of communication technologies from foreign interception are classified as category 17. These focus on technological security rather than general law enforcement (12) or international diplomacy (19).
+
+3. **Funding for Scientific and Technological Advancement**: Bills authorizing appropriations for agencies like NASA or the National Science Foundation, specifically for programs related to space, aeronautics, or scientific research, fit category 17. These are technological initiatives rather than defense (16), education (6), or government operations (20).
+
+4. **Regulation of Media and Broadcasting Technology**: Bills establishing standards for broadcasting, telecasting, or digital content (e.g., volume levels, prohibiting telecast fees) are classified as category 17. These pertain to technological aspects of media distribution rather than commerce (15) or government operations (20).
+
+5. **Intersection with Other Topics**: When technology intersects with other areas (e.g., Domestic Commerce, Energy, Law & Crime), the focus on technological aspects (e.g., telecommunications, broadcasting, cybersecurity) takes precedence for classification under category 17.
+
+6. **Exemptions and Antitrust Laws Related to Technology**: Bills exempting agreements or establishing guidelines for digital content and media fall under category 17, as they pertain to technological frameworks rather than commerce (15) or legal enforcement (12).
+
+7. **Authorization of Technological Rules or Standards**: Bills granting authority to agencies like the FCC for technological regulations (e.g., broadcasting rules, wireless broadband deployment) are classified as category 17, as they focus on technology rather than government operations (20) or commerce (15).
+
+1. **Focus on Trade Regulations and Tariffs**: Bills that address the suspension, imposition, amendment, or regulation of tariffs, duties, import quotas, or antidumping measures fit under category 18. These actions are central to foreign trade policy.
+
+2. **Specific Goods or Industries**: If the bill targets trade policies related to specific goods, industries, or materials (e.g., footwear, textiles, chemicals, steel), it belongs to category 18. This specificity distinguishes it from broader economic or diplomatic topics.
+
+3. **Promotion of International Trade**: Bills that aim to promote international trade events, fairs, or commissions to enhance trade relations fall under category 18, as they directly relate to trade agreements and activities.
+
+4. **Trade Practices and Remedies**: Bills addressing unfair foreign trade practices, injury to domestic industries caused by imports, or remedies for trade-related issues fit under category 18. These focus on trade-specific actions rather than broader economic or diplomatic concerns.
+
+5. **Embargoes and Trade Restrictions**: Bills imposing embargoes or trade restrictions with foreign nations are categorized as 18, as they deal with trade policy rather than broader international relations or diplomacy.
+
+6. **Distinction from International Affairs (19)**: Category 18 focuses on trade-specific actions like tariffs and regulations, while category 19 pertains to broader diplomatic relations, foreign aid, or international cooperation.
+
+7. **Distinction from Domestic Commerce (15)**: Category 18 involves international trade and cross-border commerce, whereas category 15 focuses on domestic business policies and regulations.
+
+By applying these rules, bills can be accurately classified under category 18 when they center on foreign trade policies and actions.
+
+1. **Focus on International Relations and Diplomacy**: Bills that address U.S. engagement with foreign nations or international organizations, including diplomatic relations, foreign aid, peace initiatives, or participation in international institutions, fall under category 19.
+
+2. **Humanitarian and Development Efforts Abroad**: Bills that involve foreign assistance, international cooperation on humanitarian issues, or efforts to promote economic development in other countries are classified as category 19.
+
+3. **Foreign Policy and Security**: Bills that deal with foreign policy, international security concerns, or combating international terrorism, especially when tied to diplomatic relations, are categorized under 19.
+
+4. **International Standards and Human Rights**: Bills that focus on monitoring or improving human rights in foreign countries, or addressing international norms and standards, fit category 19.
+
+5. **International Organizations and Appropriations**: Bills authorizing appropriations or amendments related to international affairs functions, such as contributions to the United Nations or other global entities, are classified as category 19.
+
+6. **Historical Actions and Remedies in Foreign Relations**: Bills investigating or addressing historical U.S. actions involving foreign nationals or countries, with implications for international relations, belong to category 19.
+
+7. **Distinction from Foreign Trade (18)**: If the bill involves diplomatic relations or foreign policy aspects tied to trade (e.g., embargoes, patent protection in foreign countries), it fits category 19. Purely economic trade agreements or tariffs fall under category 18.
+
+8. **Distinction from Defense (16)**: If the bill addresses international security or terrorism with a focus on diplomacy or foreign relations, it fits category 19. Purely military operations or defense strategies fall under category 16.
+
+9. **Distinction from Domestic Commerce (15)**: If the bill involves international organizations or foreign relations rather than domestic business or trade regulation, it fits category 19.
+
+1. **Government Administration Focus**: Bills that primarily address the administration, structure, or operations of government agencies, services, or employees fall under category 20. This includes amendments to policies governing federal employees, retirement systems, compensation, or overtime pay.
+
+2. **Federal Property and Facilities**: Bills involving the designation, naming, or management of federal buildings, courthouses, or other government-owned properties are classified as category 20.
+
+3. **Postal Service Operations**: Bills related to the administration of the U.S. Postal Service, such as designating postal facilities, issuing postage stamps, or amending compensation procedures for postal employees, fit category 20.
+
+4. **Budget and Fiscal Oversight**: Bills that amend or regulate government budget processes, fiscal oversight, or accounting systems are classified under category 20, as they pertain to the administration of government finances rather than broader macroeconomic policy.
+
+5. **Civil Service and Federal Employee Policies**: Bills addressing the rights, roles, or employment conditions of federal employees, including civil service retirement provisions or allowing federal employees to hold municipal positions, fit category 20.
+
+6. **Agency Structure and Permanence**: Bills establishing, restructuring, or making government agencies permanent fall under category 20, as they pertain to the administration and organization of government entities rather than the substantive policy area the agency addresses.
+
+7. **Regulation of Government Powers**: Bills amending rules governing the use or powers of government entities, such as the Armed Forces, are classified under category 20 if the focus is on administrative regulation rather than direct defense or policy strategy.
+
+8. **Distinction from Other Categories**:
+   - **Civil Rights (2)**: If the bill focuses on the administration of voting rights or agency structure rather than broader civil rights issues, it fits category 20.
+   - **Macroeconomics (1)**: If the bill addresses government budget processes rather than broader fiscal or monetary policy, it fits category 20.
+   - **Labor (5)**: If the bill pertains specifically to federal employee policies rather than broader labor issues, it fits category 20.
+   - **Defense (16)**: If the bill focuses on administrative rules for military operations rather than defense strategy or policy, it fits category 20.
+   - **Transportation (10)**: If the bill addresses indemnification or administrative procedures related to transportation laws, it fits category 20 rather than broader transportation policy.
+
+1. **Primary Focus on Public Lands**: The bill must directly address the management, designation, preservation, or use of public lands, including national forests, parks, lakeshores, trails, monuments, or other federally managed land areas.
+
+2. **Land-Specific Actions**: The legislative focus must involve actions such as land exchanges, conveyances, designations (e.g., wilderness or scenic trails), infrastructure development or maintenance on public lands, or termination/authorization of projects specifically tied to public land use.
+
+3. **Excludes Broader Topics**: The bill should not primarily focus on broader environmental regulations, agricultural policies, or government operations unless they are explicitly tied to public land management.
+
+4. **Resource Management**: Bills involving the development, preservation, or disposition of resources (e.g., water treatment, flood control, historic sites) must be tied to public lands to fit this category.
+
+5. **Distinct from Other Categories**: 
+   - **Environment (7)**: Focuses on broader environmental policy or regulation, not specific public land use.
+   - **Agriculture (4)**: Focuses on farming or agricultural policy, not the management of national forests or public lands.
+   - **Government Operations (20)**: Focuses on administrative functions of government, not the management of land resources.
+   - **Housing (14)**: Focuses on residential development, not public land designation or conveyance.
+
+6. **Specialized Land Use**: Bills addressing specific uses of public lands, such as historic preservation, water infrastructure, or scenic designations, fit category 21 if the primary focus is on the land itself rather than secondary effects (e.g., environmental impact or commerce).
