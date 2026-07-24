@@ -64,9 +64,9 @@ def test_empty_options_raises(tmp_path, monkeypatch):
             TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
 
 
-def test_zero_k_shots_raises(tmp_path, monkeypatch):
+def test_negative_k_shots_raises(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    proj = _make_bad_config(tmp_path, {"user_settings.k_shots": 0})
+    proj = _make_bad_config(tmp_path, {"user_settings.k_shots": -1})
     with patch("poliprompt.base_classifier.create_llm", return_value=MagicMock()):
         with pytest.raises(ValueError, match="k_shots"):
             TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
@@ -178,6 +178,47 @@ def test_setup_rag_loads_existing_files(clf, text_project_dir):
     assert clf.indices == [0, 1, 2, 3]
     assert clf.faiss_index is not None
     assert clf.pool_embeddings_cache.shape == (4, dim)
+
+
+# ---------------------------------------------------------------------------
+# optimize_task_description — compact RAFS output
+# ---------------------------------------------------------------------------
+
+def test_optimize_task_description_writes_compact_rules(clf, text_project_dir, monkeypatch):
+    outfiles = text_project_dir / "outfiles"
+    (outfiles / "rules.json").write_text(
+        json.dumps({"0": "reason for zero", "1": "reason for one"}),
+        encoding="utf-8",
+    )
+
+    clf.df = pd.DataFrame({"text": ["a", "b"], "label": ["0", "1"]})
+    monkeypatch.setattr(clf, "_setup_rag_resources", lambda mandatory=False: None)
+    monkeypatch.setattr(clf, "_ensure_data_loaded", lambda: None)
+
+    long_label_rule = " ".join(f"label{i}" for i in range(30))
+    short_label_rule = "Use the second category when its defining evidence is explicit."
+    long_general_rule = " ".join(f"general{i}" for i in range(40))
+    clf.llm_adv.invoke.side_effect = [
+        MagicMock(content=long_label_rule),
+        MagicMock(content=short_label_rule),
+        MagicMock(content=long_general_rule),
+    ]
+
+    result = clf.optimize_task_description()
+    lines = [line for line in result.splitlines() if line.strip()]
+
+    assert lines[0].startswith("- 0: ")
+    assert lines[1].startswith("- 1: ")
+    assert lines[2].startswith("- GENERAL: ")
+    assert len(lines[0].removeprefix("- 0: ").split()) <= 25
+    assert len(lines[1].removeprefix("- 1: ").split()) <= 25
+    assert len(lines[2].removeprefix("- GENERAL: ").split()) <= 35
+    assert (outfiles / "enhanced_rules.txt").read_text(encoding="utf-8") == result
+
+    first_prompt = clf.llm_adv.invoke.call_args_list[0].args[0]
+    general_prompt = clf.llm_adv.invoke.call_args_list[2].args[0]
+    assert "at most 25 words" in first_prompt
+    assert "at most 35 words" in general_prompt
 
 
 # ---------------------------------------------------------------------------

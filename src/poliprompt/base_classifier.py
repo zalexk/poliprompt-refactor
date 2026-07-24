@@ -345,7 +345,17 @@ class BaseClassifier(ABC):
             if real_label in category_logic_map:
                 category_logic_map[real_label].append(reason)
 
-        final_rules_segments = []
+        label_word_limit = 25
+        general_word_limit = 35
+
+        def _compact_rule_text(content, word_limit):
+            text = " ".join(str(content or "").strip().split())
+            words = text.split()
+            if len(words) > word_limit:
+                text = " ".join(words[:word_limit]).rstrip(" ,;:") + "."
+            return text
+
+        label_rules = {}
 
         for label in self.options:
             reasons = category_logic_map.get(label, [])
@@ -365,17 +375,48 @@ class BaseClassifier(ABC):
             OBSERVED PATTERNS FOR CATEGORY '{label}':
             {logic_blob}
 
-            [TASK]: Based on the task context and the {num_to_take} samples above, synthesize a concise summary of actionable rules for identifying category '{label}'. Ensure the rules are clear, specific, and clearly distinguishable from other options.
-
-            SUMMARY RULES FOR '{label}':
+            [TASK]: Synthesize exactly one actionable English sentence for identifying category '{label}'.
+            Use at most {label_word_limit} words. Preserve the strongest positive cue and, when useful,
+            one distinction from confusable labels. Do not include examples, headings, markdown, or generic
+            task instructions. Output only the sentence.
             """
 
             config = {"callbacks": [self.lf_handler]} if self.lf_handler else {}
             try:
                 response = self.llm_adv.invoke(reduce_instruction, config=config)
-                final_rules_segments.append(response.content)
+                rule = _compact_rule_text(response.content, label_word_limit)
+                if rule:
+                    label_rules[label] = rule
             except Exception as e:
                 logger.error(f"Failed to synthesize category '{label}': {e}")
+
+        final_rules_segments = [
+            f"- {label}: {label_rules[label]}"
+            for label in self.options
+            if label in label_rules
+        ]
+
+        if final_rules_segments:
+            general_instruction = f"""
+            TASK CONTEXT:
+            {self.prompt_text}
+
+            COMPACT CATEGORY RULES:
+            {chr(10).join(final_rules_segments)}
+
+            [TASK]: Synthesize exactly one actionable English sentence that captures the most important
+            cross-category decision boundary. Use at most {general_word_limit} words. Do not repeat every
+            category rule. Do not include a heading, list, markdown, or examples. Output only the sentence.
+            """
+            try:
+                response = self.llm_adv.invoke(general_instruction, config=config)
+                general_rule = _compact_rule_text(
+                    response.content, general_word_limit
+                )
+                if general_rule:
+                    final_rules_segments.append(f"- GENERAL: {general_rule}")
+            except Exception as e:
+                logger.error(f"Failed to synthesize the general rule: {e}")
 
         self.enhanced_rules = "\n\n".join(final_rules_segments)
         enhanced_path.write_text(self.enhanced_rules, encoding='utf-8')
