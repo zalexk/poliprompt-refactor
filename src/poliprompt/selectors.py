@@ -81,6 +81,38 @@ class KMeansExemplarSelector(ExemplarSelector):
         return exemplars_indices
 
 
+def select_proportional_per_class(
+    embeddings: np.ndarray,
+    labels: np.ndarray,
+    ratio: float,
+    random_state: int = 42,
+) -> list[int]:
+    """Select exemplars proportionally per class via KMeans within each class.
+
+    For each distinct label (iterated in sorted order for determinism), selects
+    n_c = min(class_size, max(1, round(class_size * ratio))) exemplars by running
+    KMeansExemplarSelector on that class's embedding subset and mapping the
+    local indices back to global row indices. Returns the concatenated global
+    indices in sorted-label order.
+
+    Raises:
+        ValueError: If ratio is not in (0, 1].
+    """
+    if not 0 < ratio <= 1:
+        raise ValueError(f"'ratio' must be in (0, 1], got {ratio}.")
+
+    labels = np.asarray(labels).astype(str)
+    indices: list[int] = []
+    for lab in sorted(set(labels.tolist())):
+        rows = np.where(labels == lab)[0]
+        n_c = min(len(rows), max(1, round(len(rows) * ratio)))
+        local = KMeansExemplarSelector().select_exemplars(
+            embeddings[rows], n_exemplars=n_c, random_state=random_state
+        )
+        indices.extend(rows[local].tolist())
+    return indices
+
+
 def create_selector(method: str) -> ExemplarSelector:
     """
     Factory function that returns an ExemplarSelector for the given method name.

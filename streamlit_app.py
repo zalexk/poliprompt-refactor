@@ -10,9 +10,8 @@ import pandas as pd
 import streamlit as st
 from pathlib import Path
 from dotenv import set_key, dotenv_values
-
-from poliprompt import TextClassifier, MultiModalClassifier
-from poliprompt.llm_contribs import PROVIDERS
+from src.poliprompt import TextClassifier, MultiModalClassifier
+from src.poliprompt.llm_contribs import PROVIDERS
 
 st.set_page_config(
     page_title="PoliPrompt",
@@ -362,9 +361,17 @@ par  = cfg_existing.get("parallel",      {})
 obs  = cfg_existing.get("observability", {})
 
 with st.expander("🔎 **retrieval**", expanded=False):
+    pool_mode = st.selectbox("pool_mode", ["fixed", "proportional"],
+                             index=0 if retr.get("pool_mode", "fixed") == "fixed" else 1,
+                             help="fixed: one global KMeans pool of n_exemplars_pool rows. proportional: each class contributes pool_ratio of its rows to the pool (e.g. 10% of a 100-row class = 10 exemplars).")
+    pool_ratio_pct = st.slider("pool_ratio (%)", 1, 100,
+                               int(round(float(retr.get("pool_ratio", 0.1)) * 100)),
+                               disabled=(pool_mode == "fixed"),
+                               help="Percentage of each class's rows selected into the exemplar pool. Every class keeps at least 1 exemplar.")
     n_exemplars_pool = st.number_input("n_exemplars_pool", 32, 2048,
                                         int(retr.get("n_exemplars_pool", 256)), step=32,
-                                        help="Size of the elite exemplar pool selected by KMeans. Recommended: 128~512. Larger pools improve retrieval quality but take longer to build.")
+                                        disabled=(pool_mode == "proportional"),
+                                        help="Size of the elite exemplar pool selected by KMeans. Recommended: 128~512. Larger pools improve retrieval quality but take longer to build. Ignored when pool_mode is proportional.")
 
 with st.expander("⚡ **parallel**", expanded=False):
     pw1, pw2, pw3 = st.columns(3)
@@ -400,7 +407,9 @@ def _build_config() -> dict:
         "user_settings":  {"lambda_param": lambda_param, "k_shots": int(k_shots),
                            "options": options_list, "testing": testing, "testing_size": int(testing_size)},
         "models":         {role: rc["model"] for role, rc in role_cfgs.items()},
-        "retrieval":      {"n_exemplars_pool": int(n_exemplars_pool)},
+        "retrieval":      {"n_exemplars_pool": int(n_exemplars_pool),
+                           "pool_mode": pool_mode,
+                           "pool_ratio": pool_ratio_pct / 100},
         "parallel":       {"embedding_workers":    int(embedding_workers),
                            "inference_workers":    int(inference_workers),
                            "embedding_batch_size": int(embedding_batch)},

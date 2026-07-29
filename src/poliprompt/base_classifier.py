@@ -17,7 +17,7 @@ import faiss
 from langgraph.graph import StateGraph, START, END
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
 from .llm_contribs import create_llm
-from .selectors import create_selector
+from .selectors import create_selector, select_proportional_per_class
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -135,6 +135,12 @@ class BaseClassifier(ABC):
 
         retrieval = self.config.get('retrieval', {})
         self.n_exemplars_pool = retrieval.get('n_exemplars_pool', 256)
+        self.pool_mode = str(retrieval.get('pool_mode', 'fixed')).lower()
+        if self.pool_mode not in ('fixed', 'proportional'):
+            raise ValueError(f"'pool_mode' must be 'fixed' or 'proportional', got {self.pool_mode}.")
+        self.pool_ratio = float(retrieval.get('pool_ratio', 0.1))
+        if self.pool_mode == 'proportional' and not (0 < self.pool_ratio <= 1):
+            raise ValueError(f"'pool_ratio' must be in (0, 1], got {self.pool_ratio}.")
 
         parallel = self.config.get('parallel', {})
         self.num_workers          = parallel.get('inference_workers',
@@ -247,11 +253,19 @@ class BaseClassifier(ABC):
         except Exception as e:
             raise Exception(f"FAISS storage failed: {e}")
 
-        actual_n = min(self.n_exemplars_pool, len(embeddings))
-        selector = create_selector(method="kmeans")
-        exemplar_indices = selector.select_exemplars(
-            embeddings, n_exemplars=actual_n, random_state=self.random_state
-        )
+        if self.pool_mode == 'proportional':
+            exemplar_indices = select_proportional_per_class(
+                embeddings,
+                self.df[self.answer_col].to_numpy(),
+                self.pool_ratio,
+                random_state=self.random_state,
+            )
+        else:
+            actual_n = min(self.n_exemplars_pool, len(embeddings))
+            selector = create_selector(method="kmeans")
+            exemplar_indices = selector.select_exemplars(
+                embeddings, n_exemplars=actual_n, random_state=self.random_state
+            )
         exemplar_indices = [int(idx) for idx in exemplar_indices]
 
         try:

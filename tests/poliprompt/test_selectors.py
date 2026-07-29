@@ -8,6 +8,7 @@ from poliprompt.selectors import (
     KMeansExemplarSelector,
     RandomExemplarSelector,
     create_selector,
+    select_proportional_per_class,
 )
 
 N = 30  # number of embeddings in test data
@@ -97,3 +98,45 @@ def test_create_selector_returns_correct_type(method, expected_type):
 def test_create_selector_invalid_method_raises():
     with pytest.raises(ValueError, match="Unsupported"):
         create_selector("pca")
+
+
+# ---------------------------------------------------------------------------
+# select_proportional_per_class
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def two_class_data():
+    rng = np.random.default_rng(0)
+    embeddings = rng.standard_normal((150, 16)).astype("float32")
+    labels = np.array(["A"] * 100 + ["B"] * 50)
+    return embeddings, labels
+
+
+def test_proportional_counts_per_class(two_class_data):
+    embeddings, labels = two_class_data
+    idx = select_proportional_per_class(embeddings, labels, 0.1, random_state=0)
+    assert sum(i < 100 for i in idx) == 10   # 10% of 100 class-A rows
+    assert sum(i >= 100 for i in idx) == 5   # 10% of 50 class-B rows
+    assert len(idx) == len(set(idx))
+
+
+def test_proportional_minimum_one_per_class(two_class_data):
+    embeddings, labels = two_class_data
+    idx = select_proportional_per_class(embeddings, labels, 0.01, random_state=0)
+    # round(50 * 0.01) == 0, floored to 1
+    assert sum(i >= 100 for i in idx) == 1
+    assert sum(i < 100 for i in idx) == 1
+
+
+@pytest.mark.parametrize("bad_ratio", [0, 1.5])
+def test_proportional_invalid_ratio_raises(two_class_data, bad_ratio):
+    embeddings, labels = two_class_data
+    with pytest.raises(ValueError, match="ratio"):
+        select_proportional_per_class(embeddings, labels, bad_ratio)
+
+
+def test_proportional_deterministic_with_same_seed(two_class_data):
+    embeddings, labels = two_class_data
+    s1 = select_proportional_per_class(embeddings, labels, 0.1, random_state=7)
+    s2 = select_proportional_per_class(embeddings, labels, 0.1, random_state=7)
+    assert sorted(s1) == sorted(s2)
