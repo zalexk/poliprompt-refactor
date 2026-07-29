@@ -4,7 +4,6 @@ from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from .base_classifier import BaseClassifier
-from .retrieves import select_kshots
 from . import utils
 
 logger = logging.getLogger(__name__)
@@ -31,14 +30,7 @@ class TextClassifier(BaseClassifier):
 
     def _prepare_agent_messages(self, idx: int, item: dict, is_expert: bool = False):
         """Build the prompt messages for a text-only inference call."""
-        examples, dists, labels, r_indices = select_kshots(
-            self.df, self.text_col, None, self.answer_col,
-            self.k_shots, idx, self.indices, self.faiss_index,
-            pool_embeddings=self.pool_embeddings_cache,
-            lambda_param=self.lambda_param, options=self.options,
-            metric="cosine",
-            rules_dict=self.rules_dict
-        )
+        examples, dists, labels, r_indices = self._retrieve_kshots(idx)
 
         sys_content = self.prompt_text
         if self.enhanced_rules:

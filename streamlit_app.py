@@ -316,9 +316,29 @@ with st.expander("⚙️ **user_settings**", expanded=True):
     if options_list:
         st.markdown(f"**Recognised labels →** " + " ".join(f"`{o}`" for o in options_list))
 
+    retr_cfg = cfg_existing.get("retrieval", {})
+    ka, kb, kc = st.columns(3)
+    kshot_mode = ka.selectbox(
+        "kshot_mode", ["fixed", "proportional"],
+        index=0 if str(retr_cfg.get("kshot_mode", "fixed")).lower() == "fixed" else 1,
+        help="fixed: retrieve exactly k_shots examples per inference (class-balanced MMR). "
+             "proportional: shot count = kshot_ratio % of the exemplar pool, and the class mix mirrors each query's neighborhood."
+    )
+    kshot_ratio_pct = kb.slider(
+        "kshot_ratio (%)", 1, 100,
+        int(round(float(retr_cfg.get("kshot_ratio", 0.1)) * 100)),
+        disabled=(kshot_mode == "fixed"),
+        help="proportional mode only: shots per inference = this % of the pool size (min 1). E.g. 10% of a 100-exemplar pool = 10 shots per query."
+    )
+    kshot_neighbors = kc.number_input(
+        "kshot_neighbors", 1, 1000, int(retr_cfg.get("kshot_neighbors", 50)),
+        disabled=(kshot_mode == "fixed"),
+        help="proportional mode only: the query's top-N nearest pool members used to estimate the class mix. Larger = more stable; must exceed the shot count to be meaningful."
+    )
+
     ua, ub, uc, ud = st.columns(4)
     lambda_param = ua.slider("lambda_param", 0.0, 1.0, float(usr.get("lambda_param", 0.5)), 0.05, help="Balance between diversity and relevance in few-shot retrieval. 0 = max diversity, 1 = max similarity. Start with 0.5.")
-    k_shots      = ub.number_input("k_shots",      0,  20,  int(usr.get("k_shots",      3)), help="Number of few-shot examples retrieved per inference. Recommended: 3~5. More examples increase token cost.")
+    k_shots      = ub.number_input("k_shots",      0,  20,  int(usr.get("k_shots",      3)), disabled=(kshot_mode == "proportional"), help="Number of few-shot examples retrieved per inference. Recommended: 3~5. More examples increase token cost. Ignored when kshot_mode = proportional.")
     testing      = uc.toggle("testing",             value=bool(usr.get("testing",      False)), help="When enabled, only the first testing_size rows are processed. Useful for quickly validating the pipeline.")
     testing_size = ud.number_input("testing_size", 8, 2048, int(usr.get("testing_size", 128)), disabled=not testing, help="Number of samples to process in testing mode.")
 
@@ -409,7 +429,10 @@ def _build_config() -> dict:
         "models":         {role: rc["model"] for role, rc in role_cfgs.items()},
         "retrieval":      {"n_exemplars_pool": int(n_exemplars_pool),
                            "pool_mode": pool_mode,
-                           "pool_ratio": pool_ratio_pct / 100},
+                           "pool_ratio": pool_ratio_pct / 100,
+                           "kshot_mode": kshot_mode,
+                           "kshot_ratio": kshot_ratio_pct / 100,
+                           "kshot_neighbors": int(kshot_neighbors)},
         "parallel":       {"embedding_workers":    int(embedding_workers),
                            "inference_workers":    int(inference_workers),
                            "embedding_batch_size": int(embedding_batch)},

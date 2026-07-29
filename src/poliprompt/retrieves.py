@@ -163,6 +163,24 @@ def select_kshots(
         lambda_param=lambda_param, metric=metric
     )
 
+    return _build_kshot_result(
+        ds, feature_col, image_col, answer_col,
+        query_embedding, pool_embeddings, selected_indices, indices, rules_dict,
+    )
+
+
+def _build_kshot_result(
+    ds: pd.DataFrame,
+    feature_col: str,
+    image_col: str,
+    answer_col: str,
+    query_embedding: np.ndarray,
+    pool_embeddings: np.ndarray,
+    selected_indices: List[int],
+    indices: List[int],
+    rules_dict: dict,
+) -> Tuple[List[Dict[str, str]], List[float], List[str], List[int]]:
+    """Assemble the result tuple for the chosen pool-relative positions."""
     # Map pool-relative indices back to global DataFrame indices
     kshots_indices = [indices[i] for i in selected_indices]
 
@@ -192,3 +210,127 @@ def select_kshots(
         })
 
     return selected_data, kshot_distances, rag_labels, kshots_indices
+
+
+def allocate_proportional_quotas(class_counts: Dict[str, int], total: int) -> Dict[str, int]:
+    """
+    Distribute `total` shots across classes proportionally to `class_counts`
+    using largest-remainder rounding.
+
+    Args:
+        class_counts: Observed count per class (e.g. label counts among the query's
+            top-M nearest pool members). Classes with zero count must be omitted.
+        total: Total number of shots to distribute.
+
+    Returns:
+        Dict mapping each class label to its shot quota. Quotas sum to `total`;
+        ties on fractional remainders break by label for determinism. Returns {}
+        when total <= 0 or class_counts is empty.
+    """
+    if total <= 0 or not class_counts:
+        return {}
+    n = sum(class_counts.values())
+    quotas: Dict[str, int] = {}
+    remainders = []
+    for label in sorted(class_counts):
+        exact = total * class_counts[label] / n
+        quotas[label] = int(exact)  # floor (counts are non-negative)
+        remainders.append((exact - quotas[label], label))
+    # Hand the leftover shots to the largest fractional remainders.
+    remainders.sort(key=lambda item: (-item[0], item[1]))
+    leftover = total - sum(quotas.values())
+    for _, label in remainders[:leftover]:
+        quotas[label] += 1
+    return quotas
+
+
+def select_kshots_proportional(
+    ds: pd.DataFrame,
+    feature_col: str,
+    image_col: str,
+    answer_col: str,
+    kshot_ratio: float,
+    kshot_neighbors: int,
+    idx: int,
+    indices: List[int],
+    index: faiss.Index,
+    pool_embeddings: np.ndarray,
+    lambda_param: float = 1.0,
+    metric: str = "cosine",
+    rules_dict: dict = None
+) -> Tuple[List[Dict[str, str]], List[float], List[str], List[int]]:
+    """
+    Retrieve few-shot examples whose class mix mirrors the query's neighborhood.
+
+    The shot budget is N = max(1, round(kshot_ratio * pool_size)), capped at the
+    pool size. The query's top-`kshot_neighbors` nearest pool members define the
+    reference class distribution; N is split across classes proportionally
+    (largest remainder). Within each class quota, examples are chosen by MMR
+    (lambda_param balances relevance vs. diversity). If a class has fewer pool
+    members than its quota, the deficit is backfilled by a global MMR pass.
+
+    Args:
+        ds: Full dataset DataFrame.
+        feature_col: Text column name.
+        image_col: Image column name (None for text-only tasks).
+        answer_col: Label column name.
+        kshot_ratio: Fraction of the pool to retrieve, in (0, 1].
+        kshot_neighbors: Neighborhood window (top-M) used to estimate the class mix.
+        idx: Row index of the current query.
+        indices: Exemplar pool indices (global DataFrame indices).
+        index: FAISS index containing all embeddings.
+        pool_embeddings: Pre-cached embeddings for the exemplar pool.
+        lambda_param: MMR balance parameter.
+        metric: Distance metric — 'cosine' or 'euclidean'.
+        rules_dict: Per-exemplar reasoning strings from the Map-Reduce phase.
+
+    Returns:
+        Tuple of (selected_data, distances, labels, global_indices), ordered
+        nearest-first. Same shape as select_kshots.
+    """
+    query_embedding = np.array(index.reconstruct(int(idx))).reshape(1, -1).astype('float32')  # type: ignore
+    pool_labels = ds.iloc[indices][answer_col].astype(str).tolist()
+    pool_size = len(indices)
+
+    total = min(pool_size, max(1, round(kshot_ratio * pool_size)))
+    window = min(kshot_neighbors, pool_size)
+
+    distances = cdist(query_embedding, pool_embeddings, metric=metric).flatten()
+    neighbor_positions = np.argsort(distances)[:window]
+
+    window_counts: Dict[str, int] = {}
+    label_positions: Dict[str, List[int]] = {}
+    for pos, label in enumerate(pool_labels):
+        label_positions.setdefault(label, []).append(pos)
+    for pos in neighbor_positions:
+        label = pool_labels[pos]
+        window_counts[label] = window_counts.get(label, 0) + 1
+
+    quotas = allocate_proportional_quotas(window_counts, total)
+
+    selected_positions: List[int] = []
+    for label in sorted(quotas):
+        member_positions = np.array(label_positions[label])
+        quota = min(quotas[label], len(member_positions))
+        if quota <= 0:
+            continue
+        chosen = maximal_marginal_relevance(
+            query_embedding, pool_embeddings[member_positions], [], quota,
+            lambda_param=lambda_param, metric=metric
+        )
+        selected_positions.extend(int(member_positions[c]) for c in chosen)
+
+    # Backfill any deficit (classes with fewer members than their quota).
+    if len(selected_positions) < total:
+        selected_positions = maximal_marginal_relevance(
+            query_embedding, pool_embeddings, selected_positions, total,
+            lambda_param=lambda_param, metric=metric
+        )
+
+    # Present nearest-first for prompt readability.
+    selected_positions.sort(key=lambda p: distances[p])
+
+    return _build_kshot_result(
+        ds, feature_col, image_col, answer_col,
+        query_embedding, pool_embeddings, selected_positions, indices, rules_dict,
+    )

@@ -18,6 +18,7 @@ from langgraph.graph import StateGraph, START, END
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
 from .llm_contribs import create_llm
 from .selectors import create_selector, select_proportional_per_class
+from .retrieves import select_kshots, select_kshots_proportional
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -141,6 +142,17 @@ class BaseClassifier(ABC):
         self.pool_ratio = float(retrieval.get('pool_ratio', 0.1))
         if self.pool_mode == 'proportional' and not (0 < self.pool_ratio <= 1):
             raise ValueError(f"'pool_ratio' must be in (0, 1], got {self.pool_ratio}.")
+
+        self.kshot_mode = str(retrieval.get('kshot_mode', 'fixed')).lower()
+        if self.kshot_mode not in ('fixed', 'proportional'):
+            raise ValueError(f"'kshot_mode' must be 'fixed' or 'proportional', got {self.kshot_mode}.")
+        self.kshot_ratio = float(retrieval.get('kshot_ratio', 0.1))
+        self.kshot_neighbors = int(retrieval.get('kshot_neighbors', 50))
+        if self.kshot_mode == 'proportional':
+            if not (0 < self.kshot_ratio <= 1):
+                raise ValueError(f"'kshot_ratio' must be in (0, 1], got {self.kshot_ratio}.")
+            if self.kshot_neighbors < 1:
+                raise ValueError(f"'kshot_neighbors' must be a positive integer, got {self.kshot_neighbors}.")
 
         parallel = self.config.get('parallel', {})
         self.num_workers          = parallel.get('inference_workers',
@@ -278,6 +290,32 @@ class BaseClassifier(ABC):
         elapsed = time.time() - start_time
         self._setup_rag_resources(mandatory=True)
         print(f"✅ Few-shot pool created in {elapsed:.2f} seconds.")
+
+    def _retrieve_kshots(self, idx: int):
+        """Retrieve few-shot examples for query row `idx` according to kshot_mode.
+
+        fixed:        exactly k_shots examples via class-balanced MMR (default).
+        proportional: shot count = kshot_ratio × pool size; the class mix mirrors
+                      the query's top-kshot_neighbors neighborhood.
+        """
+        if self.kshot_mode == 'proportional':
+            return select_kshots_proportional(
+                self.df, self.text_col, self.image_col, self.answer_col,
+                self.kshot_ratio, self.kshot_neighbors,
+                idx, self.indices, self.faiss_index,
+                pool_embeddings=self.pool_embeddings_cache,
+                lambda_param=self.lambda_param,
+                metric="cosine",
+                rules_dict=self.rules_dict,
+            )
+        return select_kshots(
+            self.df, self.text_col, self.image_col, self.answer_col,
+            self.k_shots, idx, self.indices, self.faiss_index,
+            pool_embeddings=self.pool_embeddings_cache,
+            lambda_param=self.lambda_param, options=self.options,
+            metric="cosine",
+            rules_dict=self.rules_dict,
+        )
 
     def _ensure_data_loaded(self):
         """Load the dataset DataFrame if it has not been loaded yet."""

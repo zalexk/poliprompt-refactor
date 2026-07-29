@@ -72,6 +72,36 @@ def test_negative_k_shots_raises(tmp_path, monkeypatch):
             TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
 
 
+def test_invalid_kshot_mode_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    proj = _make_bad_config(tmp_path, {"retrieval.kshot_mode": "bogus"})
+    with patch("poliprompt.base_classifier.create_llm", return_value=MagicMock()):
+        with pytest.raises(ValueError, match="kshot_mode"):
+            TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
+
+
+def test_invalid_kshot_ratio_raises_in_proportional_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    proj = _make_bad_config(tmp_path, {"retrieval.kshot_mode": "proportional", "retrieval.kshot_ratio": 0})
+    with patch("poliprompt.base_classifier.create_llm", return_value=MagicMock()):
+        with pytest.raises(ValueError, match="kshot_ratio"):
+            TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
+
+
+def test_invalid_kshot_neighbors_raises_in_proportional_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    proj = _make_bad_config(tmp_path, {"retrieval.kshot_mode": "proportional", "retrieval.kshot_neighbors": 0})
+    with patch("poliprompt.base_classifier.create_llm", return_value=MagicMock()):
+        with pytest.raises(ValueError, match="kshot_neighbors"):
+            TextClassifier(config_path=proj / "config.yaml", prompt_path=proj / "prompt.txt")
+
+
+def test_kshot_defaults_parsed(clf):
+    assert clf.kshot_mode == "fixed"
+    assert clf.kshot_ratio == 0.1
+    assert clf.kshot_neighbors == 50
+
+
 # ---------------------------------------------------------------------------
 # _parse_config_to_self
 # ---------------------------------------------------------------------------

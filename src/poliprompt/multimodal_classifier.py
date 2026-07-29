@@ -7,7 +7,6 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from .base_classifier import BaseClassifier
 from . import utils
 from .utils import get_base64_image
-from .retrieves import select_kshots
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +55,7 @@ class MultiModalClassifier(BaseClassifier):
 
     def _prepare_agent_messages(self, idx: int, item: dict, is_expert: bool = False):
         """Build the multimodal prompt messages (text + base64 images) for an inference call."""
-        examples, dists, labels, r_indices = select_kshots(
-            self.df, self.text_col, self.image_col, self.answer_col,
-            self.k_shots, idx, self.indices, self.faiss_index,
-            pool_embeddings=self.pool_embeddings_cache,
-            lambda_param=self.lambda_param, options=self.options,
-            metric="cosine",
-            rules_dict=self.rules_dict
-        )
+        examples, dists, labels, r_indices = self._retrieve_kshots(idx)
 
         system_content = self.prompt_text
         if hasattr(self, 'enhanced_rules') and self.enhanced_rules:
