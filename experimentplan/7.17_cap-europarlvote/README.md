@@ -87,3 +87,5 @@ After reading the paper and exploring the original data, consider:
 3. How should the vote-prediction prompts be designed?
 4. Should 0-shot and 5-shot settings both be tested? Which models and other parameters should be used?
 5. How could the results be analyzed to determine whether the original paper's findings are reproduced?
+
+​	

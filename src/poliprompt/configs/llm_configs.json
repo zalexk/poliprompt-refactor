@@ -23,6 +23,12 @@
         "level": "expert",
         "multimodal": true
     },
+    "gpt-5.4-mini": {
+        "max_tokens": 1000,
+        "temperature": 0.0,
+        "level": "standard",
+        "multimodal": true
+    },
     "qwen-vl-max": {
         "max_tokens": 2000,
         "temperature": 0.0,

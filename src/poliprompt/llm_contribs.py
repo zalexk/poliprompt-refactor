@@ -50,7 +50,7 @@ PROVIDERS: dict = {
         "api_key_env": "OPENAI_API_KEY",
         "base_url_env": "OPENAI_BASE_URL",
         "default_url": "https://api.openai.com/v1",
-        "inference_models": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"],
+        "inference_models": ["gpt-5.4-mini", "gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"],
         "embedding_models": ["text-embedding-3-small", "text-embedding-3-large"],
     },
     "anthropic": {

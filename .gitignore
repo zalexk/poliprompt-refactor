@@ -188,3 +188,23 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Vibe Coding
+AGENTS.md
+.claude/
+.understand-anything/
+nul 
+
+# Working
+experimentplan/
+PAPER_CONCEPT.md
+11182_Where_Prompting_Hits_the.pdf
+7.24_multimodal_dataset_search.md
+data/
+docs/poliprompt-overview-zh.md
+docs/streamlit-app-analysis.md
+examples/BBCNews-tiny/config.yaml
+examples/BBCNews-tiny/prompt.txt
+examples/HatefulMemes-tiny/config.yaml
+examples/HatefulMemes-tiny/prompt.txt
+result/
